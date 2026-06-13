@@ -1,0 +1,25 @@
+{
+  "_comment": "Canonical conversion flags for the parity corpus. Read by both tests/test_golden_parity.py (urdf2any side) and scripts/generate_reference.py (IsaacLab side) so the two stay in lockstep. urdf paths are relative to the repo root. merge_fixed_joints MUST be false: urdf2any does not merge fixed joints, and IsaacLab's UrdfConverterCfg defaults merge_fixed_joints to true, so the reference must override it.",
+  "samples": {
+    "simple_2_link": {
+      "urdf": "tests/assets/simple_2_link/simple_2_link.urdf",
+      "fix_base": false,
+      "merge_fixed_joints": false,
+      "joint_target_type": "position",
+      "joint_stiffness": 100.0,
+      "joint_damping": 1.0,
+      "skip_collision_inertia": false,
+      "collider_type": "convex_hull"
+    },
+    "franka": {
+      "urdf": "tests/assets/franka/robot.urdf",
+      "fix_base": true,
+      "merge_fixed_joints": false,
+      "joint_target_type": "position",
+      "joint_stiffness": 100.0,
+      "joint_damping": 1.0,
+      "skip_collision_inertia": false,
+      "collider_type": "convex_hull"
+    }
+  }
+}

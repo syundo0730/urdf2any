@@ -1,0 +1,491 @@
+{
+  "_meta": {
+    "config": {
+      "collider_type": "convex_hull",
+      "fix_base": true,
+      "joint_damping": 1.0,
+      "joint_stiffness": 100.0,
+      "joint_target_type": "position",
+      "merge_fixed_joints": false,
+      "skip_collision_inertia": false,
+      "urdf": "tests/assets/franka/robot.urdf"
+    },
+    "generated": "2026-06-28T10:37:51",
+    "isaac_sim_version": "5.1.0",
+    "sample": "franka"
+  },
+  "summary": {
+    "articulation_roots": [
+      "root_joint"
+    ],
+    "joints": {
+      "base_link_robot": {
+        "type": "fixed"
+      },
+      "camera_color_joint": {
+        "type": "fixed"
+      },
+      "camera_color_optical_joint": {
+        "type": "fixed"
+      },
+      "camera_depth_joint": {
+        "type": "fixed"
+      },
+      "camera_depth_optical_joint": {
+        "type": "fixed"
+      },
+      "camera_joint": {
+        "type": "fixed"
+      },
+      "camera_left_ir_joint": {
+        "type": "fixed"
+      },
+      "camera_left_ir_optical_joint": {
+        "type": "fixed"
+      },
+      "camera_link_joint": {
+        "type": "fixed"
+      },
+      "camera_right_ir_joint": {
+        "type": "fixed"
+      },
+      "camera_right_ir_optical_joint": {
+        "type": "fixed"
+      },
+      "panda_face_back_left": {
+        "type": "fixed"
+      },
+      "panda_face_back_right": {
+        "type": "fixed"
+      },
+      "panda_face_left": {
+        "type": "fixed"
+      },
+      "panda_face_right": {
+        "type": "fixed"
+      },
+      "panda_finger_joint1": {
+        "axis": "Y",
+        "drive_damping": 1.0,
+        "drive_stiffness": 100.0,
+        "lower": 0.0,
+        "type": "prismatic",
+        "upper": 0.03999999910593033
+      },
+      "panda_finger_joint2": {
+        "axis": "Y",
+        "drive_damping": 1.0,
+        "drive_stiffness": 100.0,
+        "lower": 0.0,
+        "type": "prismatic",
+        "upper": 0.03999999910593033
+      },
+      "panda_forearm_distal": {
+        "type": "fixed"
+      },
+      "panda_forearm_end_pt": {
+        "type": "fixed"
+      },
+      "panda_forearm_mid_pt": {
+        "type": "fixed"
+      },
+      "panda_forearm_mid_pt_shifted": {
+        "type": "fixed"
+      },
+      "panda_hand_joint": {
+        "type": "fixed"
+      },
+      "panda_joint1": {
+        "axis": "Z",
+        "drive_damping": 0.01745329238474369,
+        "drive_stiffness": 1.7453292608261108,
+        "lower": -166.0030517578125,
+        "type": "revolute",
+        "upper": 166.0030517578125
+      },
+      "panda_joint2": {
+        "axis": "Z",
+        "drive_damping": 0.01745329238474369,
+        "drive_stiffness": 1.7453292608261108,
+        "lower": -101.00099182128906,
+        "type": "revolute",
+        "upper": 101.00099182128906
+      },
+      "panda_joint3": {
+        "axis": "Z",
+        "drive_damping": 0.01745329238474369,
+        "drive_stiffness": 1.7453292608261108,
+        "lower": -166.0030517578125,
+        "type": "revolute",
+        "upper": 166.0030517578125
+      },
+      "panda_joint4": {
+        "axis": "Z",
+        "drive_damping": 0.01745329238474369,
+        "drive_stiffness": 1.7453292608261108,
+        "lower": -176.00115966796875,
+        "type": "revolute",
+        "upper": -3.9992449283599854
+      },
+      "panda_joint5": {
+        "axis": "Z",
+        "drive_damping": 0.01745329238474369,
+        "drive_stiffness": 1.7453292608261108,
+        "lower": -166.0030517578125,
+        "type": "revolute",
+        "upper": 166.0030517578125
+      },
+      "panda_joint6": {
+        "axis": "Z",
+        "drive_damping": 0.01745329238474369,
+        "drive_stiffness": 1.7453292608261108,
+        "lower": -1.0026761293411255,
+        "type": "revolute",
+        "upper": 215.00241088867188
+      },
+      "panda_joint7": {
+        "axis": "Z",
+        "drive_damping": 0.01745329238474369,
+        "drive_stiffness": 1.7453292608261108,
+        "lower": -166.0030517578125,
+        "type": "revolute",
+        "upper": 166.0030517578125
+      },
+      "panda_joint8": {
+        "type": "fixed"
+      },
+      "panda_leftfingertip": {
+        "type": "fixed"
+      },
+      "panda_rightfingertip": {
+        "type": "fixed"
+      },
+      "panda_wrist_end_pt": {
+        "type": "fixed"
+      },
+      "right_gripper": {
+        "type": "fixed"
+      },
+      "root_joint": {
+        "type": "fixed"
+      }
+    },
+    "links": {
+      "base_link": {
+        "center_of_mass": null,
+        "diagonal_inertia": [
+          9.999999747378752e-05,
+          9.999999747378752e-05,
+          9.999999747378752e-05
+        ],
+        "mass": 0.0,
+        "principal_axes": null
+      },
+      "camera_bottom_screw_frame": {
+        "center_of_mass": null,
+        "diagonal_inertia": [
+          9.999999747378752e-05,
+          9.999999747378752e-05,
+          9.999999747378752e-05
+        ],
+        "mass": null,
+        "principal_axes": null
+      },
+      "camera_color_frame": {
+        "center_of_mass": null,
+        "diagonal_inertia": [
+          9.999999747378752e-05,
+          9.999999747378752e-05,
+          9.999999747378752e-05
+        ],
+        "mass": null,
+        "principal_axes": null
+      },
+      "camera_color_optical_frame": {
+        "center_of_mass": null,
+        "diagonal_inertia": [
+          9.999999747378752e-05,
+          9.999999747378752e-05,
+          9.999999747378752e-05
+        ],
+        "mass": null,
+        "principal_axes": null
+      },
+      "camera_depth_frame": {
+        "center_of_mass": null,
+        "diagonal_inertia": [
+          9.999999747378752e-05,
+          9.999999747378752e-05,
+          9.999999747378752e-05
+        ],
+        "mass": null,
+        "principal_axes": null
+      },
+      "camera_depth_optical_frame": {
+        "center_of_mass": null,
+        "diagonal_inertia": [
+          9.999999747378752e-05,
+          9.999999747378752e-05,
+          9.999999747378752e-05
+        ],
+        "mass": null,
+        "principal_axes": null
+      },
+      "camera_left_ir_frame": {
+        "center_of_mass": null,
+        "diagonal_inertia": [
+          9.999999747378752e-05,
+          9.999999747378752e-05,
+          9.999999747378752e-05
+        ],
+        "mass": null,
+        "principal_axes": null
+      },
+      "camera_left_ir_optical_frame": {
+        "center_of_mass": null,
+        "diagonal_inertia": [
+          9.999999747378752e-05,
+          9.999999747378752e-05,
+          9.999999747378752e-05
+        ],
+        "mass": null,
+        "principal_axes": null
+      },
+      "camera_link": {
+        "center_of_mass": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "diagonal_inertia": [
+          0.003881243057549,
+          0.0004989400040358305,
+          0.0038792570121586323
+        ],
+        "mass": 0.5640000104904175,
+        "principal_axes": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "camera_right_ir_frame": {
+        "center_of_mass": null,
+        "diagonal_inertia": [
+          9.999999747378752e-05,
+          9.999999747378752e-05,
+          9.999999747378752e-05
+        ],
+        "mass": null,
+        "principal_axes": null
+      },
+      "camera_right_ir_optical_frame": {
+        "center_of_mass": null,
+        "diagonal_inertia": [
+          9.999999747378752e-05,
+          9.999999747378752e-05,
+          9.999999747378752e-05
+        ],
+        "mass": null,
+        "principal_axes": null
+      },
+      "panda_face_back_left": {
+        "center_of_mass": null,
+        "diagonal_inertia": [
+          9.999999747378752e-05,
+          9.999999747378752e-05,
+          9.999999747378752e-05
+        ],
+        "mass": null,
+        "principal_axes": null
+      },
+      "panda_face_back_right": {
+        "center_of_mass": null,
+        "diagonal_inertia": [
+          9.999999747378752e-05,
+          9.999999747378752e-05,
+          9.999999747378752e-05
+        ],
+        "mass": null,
+        "principal_axes": null
+      },
+      "panda_face_left": {
+        "center_of_mass": null,
+        "diagonal_inertia": [
+          9.999999747378752e-05,
+          9.999999747378752e-05,
+          9.999999747378752e-05
+        ],
+        "mass": null,
+        "principal_axes": null
+      },
+      "panda_face_right": {
+        "center_of_mass": null,
+        "diagonal_inertia": [
+          9.999999747378752e-05,
+          9.999999747378752e-05,
+          9.999999747378752e-05
+        ],
+        "mass": null,
+        "principal_axes": null
+      },
+      "panda_forearm_distal": {
+        "center_of_mass": null,
+        "diagonal_inertia": [
+          9.999999747378752e-05,
+          9.999999747378752e-05,
+          9.999999747378752e-05
+        ],
+        "mass": null,
+        "principal_axes": null
+      },
+      "panda_forearm_end_pt": {
+        "center_of_mass": null,
+        "diagonal_inertia": [
+          9.999999747378752e-05,
+          9.999999747378752e-05,
+          9.999999747378752e-05
+        ],
+        "mass": null,
+        "principal_axes": null
+      },
+      "panda_forearm_mid_pt": {
+        "center_of_mass": null,
+        "diagonal_inertia": [
+          9.999999747378752e-05,
+          9.999999747378752e-05,
+          9.999999747378752e-05
+        ],
+        "mass": null,
+        "principal_axes": null
+      },
+      "panda_forearm_mid_pt_shifted": {
+        "center_of_mass": null,
+        "diagonal_inertia": [
+          9.999999747378752e-05,
+          9.999999747378752e-05,
+          9.999999747378752e-05
+        ],
+        "mass": null,
+        "principal_axes": null
+      },
+      "panda_hand": {
+        "center_of_mass": null,
+        "diagonal_inertia": null,
+        "mass": null,
+        "principal_axes": null
+      },
+      "panda_leftfinger": {
+        "center_of_mass": null,
+        "diagonal_inertia": null,
+        "mass": null,
+        "principal_axes": null
+      },
+      "panda_leftfingertip": {
+        "center_of_mass": null,
+        "diagonal_inertia": [
+          9.999999747378752e-05,
+          9.999999747378752e-05,
+          9.999999747378752e-05
+        ],
+        "mass": null,
+        "principal_axes": null
+      },
+      "panda_link0": {
+        "center_of_mass": null,
+        "diagonal_inertia": null,
+        "mass": null,
+        "principal_axes": null
+      },
+      "panda_link1": {
+        "center_of_mass": null,
+        "diagonal_inertia": null,
+        "mass": null,
+        "principal_axes": null
+      },
+      "panda_link2": {
+        "center_of_mass": null,
+        "diagonal_inertia": null,
+        "mass": null,
+        "principal_axes": null
+      },
+      "panda_link3": {
+        "center_of_mass": null,
+        "diagonal_inertia": null,
+        "mass": null,
+        "principal_axes": null
+      },
+      "panda_link4": {
+        "center_of_mass": null,
+        "diagonal_inertia": null,
+        "mass": null,
+        "principal_axes": null
+      },
+      "panda_link5": {
+        "center_of_mass": null,
+        "diagonal_inertia": null,
+        "mass": null,
+        "principal_axes": null
+      },
+      "panda_link6": {
+        "center_of_mass": null,
+        "diagonal_inertia": null,
+        "mass": null,
+        "principal_axes": null
+      },
+      "panda_link7": {
+        "center_of_mass": null,
+        "diagonal_inertia": null,
+        "mass": null,
+        "principal_axes": null
+      },
+      "panda_link8": {
+        "center_of_mass": null,
+        "diagonal_inertia": [
+          9.999999747378752e-05,
+          9.999999747378752e-05,
+          9.999999747378752e-05
+        ],
+        "mass": null,
+        "principal_axes": null
+      },
+      "panda_rightfinger": {
+        "center_of_mass": null,
+        "diagonal_inertia": null,
+        "mass": null,
+        "principal_axes": null
+      },
+      "panda_rightfingertip": {
+        "center_of_mass": null,
+        "diagonal_inertia": [
+          9.999999747378752e-05,
+          9.999999747378752e-05,
+          9.999999747378752e-05
+        ],
+        "mass": null,
+        "principal_axes": null
+      },
+      "panda_wrist_end_pt": {
+        "center_of_mass": null,
+        "diagonal_inertia": [
+          9.999999747378752e-05,
+          9.999999747378752e-05,
+          9.999999747378752e-05
+        ],
+        "mass": null,
+        "principal_axes": null
+      },
+      "right_gripper": {
+        "center_of_mass": null,
+        "diagonal_inertia": [
+          9.999999747378752e-05,
+          9.999999747378752e-05,
+          9.999999747378752e-05
+        ],
+        "mass": null,
+        "principal_axes": null
+      }
+    }
+  }
+}

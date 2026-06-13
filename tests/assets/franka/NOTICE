@@ -1,0 +1,15 @@
+The Franka Panda description (robot.urdf + meshes/*.stl) is vendored from the
+Isaac Sim project:
+
+  Source:  https://github.com/isaac-sim/IsaacSim
+  Path:    source/extensions/isaacsim.robot_motion.cumotion/robot_configurations/franka/
+  Commit:  4031678
+  License: Apache-2.0
+
+Modifications from the original:
+  - Removed the unused meshes/camera_link.stl (the URDF references a box for the
+    camera link; the RealSense d415 mesh reference is commented out upstream).
+  No other changes; robot.urdf is otherwise unmodified.
+
+Used here as a CI parity-test fixture. See the Isaac Sim repository for the full
+Apache-2.0 license text.

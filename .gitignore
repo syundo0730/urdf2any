@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Build
+dist/
+build/
+*.usd
+*.usda
+*.usdc
+
+# Env
+.venv/

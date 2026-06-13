@@ -1,0 +1,116 @@
+{
+  "_meta": {
+    "config": {
+      "collider_type": "convex_hull",
+      "fix_base": false,
+      "joint_damping": 1.0,
+      "joint_stiffness": 100.0,
+      "joint_target_type": "position",
+      "merge_fixed_joints": false,
+      "skip_collision_inertia": false,
+      "urdf": "tests/assets/simple_2_link/simple_2_link.urdf"
+    },
+    "generated": "2026-06-28T10:37:50",
+    "isaac_sim_version": "5.1.0",
+    "sample": "simple_2_link"
+  },
+  "summary": {
+    "articulation_roots": [
+      "world"
+    ],
+    "joints": {
+      "imu_joint": {
+        "type": "fixed"
+      },
+      "joint_1": {
+        "axis": "Z",
+        "drive_damping": 0.01745329238474369,
+        "drive_stiffness": 1.7453292608261108,
+        "lower": -572.957763671875,
+        "type": "revolute",
+        "upper": 572.957763671875
+      },
+      "world": {
+        "type": "fixed"
+      }
+    },
+    "links": {
+      "base": {
+        "center_of_mass": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "diagonal_inertia": [
+          0.004000000189989805,
+          0.004000000189989805,
+          0.0020000000949949026
+        ],
+        "mass": 10.0,
+        "principal_axes": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "imu_link": {
+        "center_of_mass": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "diagonal_inertia": [
+          9.999999747378752e-05,
+          9.999999747378752e-05,
+          9.999999747378752e-05
+        ],
+        "mass": 0.009999999776482582,
+        "principal_axes": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "link_1": {
+        "center_of_mass": [
+          0.20000000298023224,
+          0.0,
+          0.10000000149011612
+        ],
+        "diagonal_inertia": [
+          0.004000000189989805,
+          0.004000000189989805,
+          0.0020000000949949026
+        ],
+        "mass": 10.0,
+        "principal_axes": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "world": {
+        "center_of_mass": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "diagonal_inertia": [
+          9.999999747378752e-06,
+          9.999999747378752e-06,
+          9.999999747378752e-06
+        ],
+        "mass": 0.0010000000474974513,
+        "principal_axes": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    }
+  }
+}

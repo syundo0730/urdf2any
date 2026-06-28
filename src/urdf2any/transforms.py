@@ -53,6 +53,18 @@ def quat_rotate(q: np.ndarray, v: np.ndarray) -> np.ndarray:
     return quat_multiply(quat_multiply(q, qv), quat_conjugate(q))[1:]
 
 
+def quat_to_matrix(q: np.ndarray) -> np.ndarray:
+    """Convert a (w, x, y, z) quaternion to a 3x3 rotation matrix."""
+    w, x, y, z = q
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ]
+    )
+
+
 def quat_from_matrix(m: np.ndarray) -> np.ndarray:
     """Convert a 3x3 rotation matrix to a (w, x, y, z) quaternion."""
     t = np.trace(m)

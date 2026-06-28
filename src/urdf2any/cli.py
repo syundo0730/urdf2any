@@ -33,6 +33,18 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--replace-cylinders-with-capsules", action="store_true")
     parser.add_argument(
+        "--merge-fixed-joints",
+        action="store_true",
+        help="Collapse fixed-joint links into their parent (combine mass/inertia/geometry)",
+    )
+    parser.add_argument(
+        "--keep-fixed-link-inertials",
+        dest="merge_fixed_ignore_inertia",
+        action="store_false",
+        help="When merging, keep links with mass/inertia as separate bodies "
+        "(Isaac Sim 5.1+ behavior); default merges all fixed links",
+    )
+    parser.add_argument(
         "--skip-collision-inertia",
         action="store_true",
         help="Omit authored inertia/COM on collision links; let the consumer compute them",
@@ -91,6 +103,8 @@ def main(argv: list[str] | None = None) -> int:
         self_collision=args.self_collision,
         collider_type=args.collider_type,
         replace_cylinders_with_capsules=args.replace_cylinders_with_capsules,
+        merge_fixed_joints=args.merge_fixed_joints,
+        merge_fixed_ignore_inertia=args.merge_fixed_ignore_inertia,
         skip_collision_inertia=args.skip_collision_inertia,
         skip_collision_mass=args.skip_collision_mass,
         joint_drive=JointDriveCfg(

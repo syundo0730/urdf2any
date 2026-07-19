@@ -30,6 +30,7 @@ from ..ir import (
     Sphere,
 )
 from ..mesh import ensure_mujoco_compatible
+from ..transforms import quat_to_matrix
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +108,10 @@ class _MjcfWriter:
         worldbody = ET.SubElement(root, "worldbody")
 
         root_link = self.robot.root_link_name()
-        self._write_body(worldbody, root_link, is_root=True)
+        if self.config.fix_base:
+            self._fold_root_into_worldbody(worldbody, root_link)
+        else:
+            self._write_body(worldbody, root_link, is_root=True)
 
         self._write_assets(asset)
 
@@ -116,6 +120,21 @@ class _MjcfWriter:
         return root
 
     # ----- bodies -----------------------------------------------------------
+
+    def _fold_root_into_worldbody(self, worldbody: ET.Element, link_name: str) -> None:
+        """fix_base: merge the welded root link into the worldbody, matching
+        MuJoCo's native URDF import (a fixed base is absorbed into the static
+        world rather than kept as a separate body). The root's geometry becomes
+        static world geometry; its inertial is dropped (the worldbody is static);
+        its children become top-level bodies under the worldbody.
+        """
+        link = self.robot.links[link_name]
+        for i, geometry in enumerate(link.visuals):
+            self._write_geom(worldbody, geometry, i, collision=False)
+        for i, geometry in enumerate(link.collisions):
+            self._write_geom(worldbody, geometry, i, collision=True)
+        for joint in self.children[link_name]:
+            self._write_body(worldbody, joint.child, is_root=False)
 
     def _write_body(self, parent_elem: ET.Element, link_name: str, is_root: bool) -> None:
         link = self.robot.links[link_name]
@@ -154,7 +173,12 @@ class _MjcfWriter:
         com = inertial.origin.translation if inertial.origin is not None else np.zeros(3)
         attrs["pos"] = _fmt(com)
         if inertial.inertia is not None:
+            # The IR tensor lives in the inertial-origin frame; MuJoCo fullinertia
+            # is in the body (link) frame, so rotate: I_link = R I R^T.
             m = inertial.inertia
+            if inertial.origin is not None and not _is_identity_quat(inertial.origin.rotation):
+                r = quat_to_matrix(inertial.origin.rotation)
+                m = r @ m @ r.T
             # MuJoCo fullinertia order: ixx iyy izz ixy ixz iyz
             attrs["fullinertia"] = _fmt(
                 [m[0, 0], m[1, 1], m[2, 2], m[0, 1], m[0, 2], m[1, 2]]
@@ -186,7 +210,8 @@ class _MjcfWriter:
     def _write_geom(self, body: ET.Element, geometry: Geometry, index: int, collision: bool) -> None:
         shape = geometry.shape
         attrs: dict[str, str] = {}
-        name = geometry.name or f"{'col' if collision else 'vis'}_{body.get('name')}_{index}"
+        owner = body.get("name") or "world"  # worldbody has no name attribute
+        name = geometry.name or f"{'col' if collision else 'vis'}_{owner}_{index}"
         attrs["name"] = name
 
         origin = geometry.origin
@@ -221,6 +246,11 @@ class _MjcfWriter:
             attrs["group"] = "2"
             attrs["contype"] = "0"
             attrs["conaffinity"] = "0"
+            # Visual geoms must not contribute to a link's mass/inertia: when a
+            # link has no explicit <inertial>, MuJoCo computes it from all geoms,
+            # so a visual sharing the collision mesh would double-count the mass.
+            # density=0 matches MuJoCo's own discardvisual handling of URDF.
+            attrs["density"] = "0"
             if geometry.material:
                 attrs["material"] = self._register_material(geometry.material)
 

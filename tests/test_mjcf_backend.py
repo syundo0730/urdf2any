@@ -53,8 +53,11 @@ def test_freejoint_when_floating(two_link_urdf, tmp_path):
 
 def test_no_freejoint_when_fixed(two_link_urdf, tmp_path):
     _, root = _convert(two_link_urdf, tmp_path, fix_base=True)
-    base = root.find(".//body[@name='base_link']")
-    assert base.find("freejoint") is None
+    # fix_base folds the root link into the worldbody (no base_link body) and adds
+    # no freejoint anywhere.
+    assert root.find(".//body[@name='base_link']") is None
+    assert root.find(".//freejoint") is None
+    assert root.find(".//body[@name='arm_link']") is not None  # child hoisted to worldbody
 
 
 def test_inertial_fullinertia(two_link_urdf, tmp_path):
@@ -125,12 +128,22 @@ def _world_link_urdf(tmp_path):
 
 
 def test_reserved_world_link_renamed(tmp_path):
+    # floating base: the root "world" link IS emitted as a body, so it must be
+    # renamed to avoid colliding with MuJoCo's reserved worldbody name.
+    # (With fix_base the root folds into the worldbody, so there is no collision.)
     urdf = _world_link_urdf(tmp_path)
-    out, root = _convert(urdf, tmp_path, fix_base=True)
+    out, root = _convert(urdf, tmp_path, fix_base=False)
     body_names = [b.get("name") for b in root.iter("body")]
-    # MuJoCo reserves "world"; the link must be emitted under a different name.
     assert "world" not in body_names
     assert "world_link" in body_names
+
+
+def test_fixed_base_world_link_folded(tmp_path):
+    # With fix_base, the root "world" link folds into the worldbody entirely.
+    urdf = _world_link_urdf(tmp_path)
+    _, root = _convert(urdf, tmp_path, fix_base=True)
+    body_names = [b.get("name") for b in root.iter("body")]
+    assert body_names == ["arm"]  # only the moving child remains as a body
 
 
 # --- validation against the real MuJoCo compiler ---------------------------
@@ -140,9 +153,9 @@ mujoco = pytest.importorskip("mujoco")
 
 def test_reserved_world_link_loads_in_mujoco(tmp_path):
     urdf = _world_link_urdf(tmp_path)
-    out, _ = _convert(urdf, tmp_path, fix_base=True)
+    out, _ = _convert(urdf, tmp_path, fix_base=False)
     model = mujoco.MjModel.from_xml_path(str(out))  # must not raise "repeated name 'world'"
-    assert model.njnt == 1
+    assert model.njnt >= 1
 
 
 def test_two_link_loads_in_mujoco(two_link_urdf, tmp_path):

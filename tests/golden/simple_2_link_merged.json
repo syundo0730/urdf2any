@@ -1,0 +1,72 @@
+{
+  "_meta": {
+    "config": {
+      "collider_type": "convex_hull",
+      "fix_base": false,
+      "joint_damping": 1.0,
+      "joint_stiffness": 100.0,
+      "joint_target_type": "position",
+      "merge_fixed_joints": true,
+      "skip_collision_inertia": false,
+      "urdf": "tests/assets/simple_2_link/simple_2_link.urdf"
+    },
+    "generated": "2026-07-19T04:27:41",
+    "isaac_sim_version": "5.1.0",
+    "sample": "simple_2_link_merged"
+  },
+  "summary": {
+    "articulation_roots": [
+      "world"
+    ],
+    "joints": {
+      "joint_1": {
+        "axis": "Z",
+        "drive_damping": 0.01745329238474369,
+        "drive_stiffness": 1.7453292608261108,
+        "lower": -572.957763671875,
+        "type": "revolute",
+        "upper": 572.957763671875
+      }
+    },
+    "links": {
+      "link_1": {
+        "center_of_mass": [
+          0.20019978284835815,
+          0.0,
+          0.10000000149011612
+        ],
+        "diagonal_inertia": [
+          0.004100000020116568,
+          0.004499600734561682,
+          0.0024996004067361355
+        ],
+        "mass": 10.010000228881836,
+        "principal_axes": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "world": {
+        "center_of_mass": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "diagonal_inertia": [
+          0.004010000266134739,
+          0.004010000266134739,
+          0.0020100001711398363
+        ],
+        "mass": 10.00100040435791,
+        "principal_axes": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    }
+  }
+}

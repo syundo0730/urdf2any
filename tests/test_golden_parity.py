@@ -30,15 +30,25 @@ pytest.importorskip("pxr")
 
 
 def _config(sample: dict) -> ConvertConfig:
+    drive = JointDriveCfg(
+        target_type=sample["joint_target_type"],
+        stiffness=sample["joint_stiffness"],
+        damping=sample["joint_damping"],
+    )
+    if sample["merge_fixed_joints"]:
+        # The merged samples validate the isaaclab compatibility preset
+        # end-to-end against the real importer's default (merging) behaviour.
+        return ConvertConfig.isaaclab(
+            fix_base=sample["fix_base"],
+            collider_type=sample["collider_type"],
+            skip_collision_inertia=sample["skip_collision_inertia"],
+            joint_drive=drive,
+        )
     return ConvertConfig(
         fix_base=sample["fix_base"],
         collider_type=sample["collider_type"],
         skip_collision_inertia=sample["skip_collision_inertia"],
-        joint_drive=JointDriveCfg(
-            target_type=sample["joint_target_type"],
-            stiffness=sample["joint_stiffness"],
-            damping=sample["joint_damping"],
-        ),
+        joint_drive=drive,
     )
 
 

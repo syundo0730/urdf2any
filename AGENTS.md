@@ -2,14 +2,26 @@
 
 A pure-Python tool that converts URDF to USD / MJCF, independent of Isaac Sim and Omniverse.
 
-## Documentation layout (follow this)
+## Architecture
 
-- `docs/notes.md` — long-lived knowledge: verified facts, semantics mapping tables, decision log. **When you learn something during implementation, append it to the decision log here** (date + decision + reason, a few lines).
-- `docs/implementation-plan.md` — disposable TODO. Collapse completed phases to one line. Do not accumulate learnings here (move them to notes.md).
-- Do not create new documentation files. Keep everything in the two files above plus the README.
-- As implementation progresses, replace notes.md descriptions that are already expressed in code/tests with "see code" references, keeping it lean.
+URDF → parser (`src/urdf2any/urdf/parser.py`) → simulator-agnostic IR
+(`src/urdf2any/ir.py`) → backends (`src/urdf2any/backends/usd.py`,
+`src/urdf2any/backends/mjcf.py`). Generic IR preprocessing (fixed-joint merging,
+drive injection, geometry exclusion) lives in `src/urdf2any/config.py`.
 
 ## Rules
 
-- The IR uses SI units and radians. Unit conversion is the backend's responsibility (USD uses degrees).
-- Clone destinations of the reference implementations are in notes.md §11.
+- The IR uses SI units and radians. Unit conversion is the backend's
+  responsibility (USD uses degrees).
+- Keep robot-specific policy (link name literals, part removal, gain values) out
+  of the core; provide only generic, declarative mechanisms. Callers mutate the
+  IR via `parse_urdf` → `convert_robot`.
+- Long-lived knowledge belongs in code, not documents: module docstrings state
+  conventions and known divergences; the parity suites encode verified behavior.
+  Do not add documentation files beyond the README.
+- Compatibility claims must be backed by a parity test. After changing
+  conversion behavior, run `uv run pytest` — `tests/test_golden_parity.py`
+  compares against IsaacLab importer goldens (`tests/golden/`) and
+  `tests/test_mjcf_parity.py` compares live against MuJoCo's native URDF loader.
+- Regenerating USD goldens requires an IsaacLab container:
+  `scripts/generate_reference.py` (see its docstring; the import needs no GPU).

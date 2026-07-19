@@ -50,6 +50,26 @@ def test_skip_collision_inertia_keeps_frame_link_inertia(two_link_urdf):
     assert tip.inertial.inertia is not None
 
 
+def test_isaaclab_preset():
+    cfg = ConvertConfig.isaaclab()
+    assert cfg.merge_fixed_joints is True
+    assert cfg.merge_fixed_ignore_inertia is True  # IsaacLab wires ignore := merge
+    assert cfg.compute_missing_inertials is False  # the importer never derives geom mass
+
+
+def test_mujoco_preset():
+    cfg = ConvertConfig.mujoco()
+    assert cfg.merge_fixed_joints is True  # MuJoCo always merges on URDF import
+    assert cfg.compute_missing_inertials is True  # MuJoCo derives geom mass when merging
+
+
+def test_preset_overrides():
+    cfg = ConvertConfig.mujoco(fix_base=True, merge_fixed_joints=False)
+    assert cfg.fix_base is True
+    assert cfg.merge_fixed_joints is False  # explicit override wins
+    assert cfg.compute_missing_inertials is True  # untouched preset value kept
+
+
 def test_convert_robot_ir_entry_point(two_link_urdf, tmp_path):
     robot = parse_urdf(two_link_urdf)
     robot.name = "renamed"

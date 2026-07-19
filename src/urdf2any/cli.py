@@ -24,6 +24,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--dump-ir", action="store_true", help="Print the parsed IR and exit")
 
+    parser.add_argument(
+        "--preset",
+        choices=["isaaclab", "mujoco"],
+        default=None,
+        help="Start from a compatibility preset: 'isaaclab' matches the IsaacLab "
+        "URDF importer defaults, 'mujoco' matches MuJoCo's native URDF conversion. "
+        "Individual flags below override the preset.",
+    )
     parser.add_argument("--fix-base", action="store_true", help="Weld the root link to the world")
     parser.add_argument("--self-collision", action="store_true")
     parser.add_argument(
@@ -86,6 +94,45 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _build_config(args) -> ConvertConfig:
+    """Build a ConvertConfig from CLI args, layering: preset -> explicit flags.
+
+    A flag overrides the preset only when it was actually passed (its value
+    differs from the argparse default), so ``--preset mujoco`` keeps its merge
+    settings unless the user explicitly changes them.
+    """
+    presets = {"isaaclab": ConvertConfig.isaaclab, "mujoco": ConvertConfig.mujoco}
+    config = presets[args.preset]() if args.preset else ConvertConfig()
+
+    parser = _build_parser()
+    flag_fields = (
+        "fix_base",
+        "self_collision",
+        "collider_type",
+        "replace_cylinders_with_capsules",
+        "merge_fixed_joints",
+        "merge_fixed_ignore_inertia",
+        "compute_missing_inertials",
+        "skip_collision_inertia",
+        "skip_collision_mass",
+        "frame_link_mass",
+        "frame_link_inertia",
+    )
+    for name in flag_fields:
+        value = getattr(args, name)
+        if value != parser.get_default(name):
+            setattr(config, name, value)
+
+    config.joint_drive = JointDriveCfg(
+        target_type=args.joint_target_type,
+        stiffness=args.joint_stiffness,
+        damping=args.joint_damping,
+    )
+    config.exclude_geometry_names = args.exclude_geometry
+    config.mjcf_add_actuators = not args.no_actuators
+    return config
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     logging.basicConfig(
@@ -104,26 +151,7 @@ def main(argv: list[str] | None = None) -> int:
         print("error: -o/--output is required (unless --dump-ir)", file=sys.stderr)
         return 2
 
-    config = ConvertConfig(
-        fix_base=args.fix_base,
-        self_collision=args.self_collision,
-        collider_type=args.collider_type,
-        replace_cylinders_with_capsules=args.replace_cylinders_with_capsules,
-        merge_fixed_joints=args.merge_fixed_joints,
-        merge_fixed_ignore_inertia=args.merge_fixed_ignore_inertia,
-        compute_missing_inertials=args.compute_missing_inertials,
-        skip_collision_inertia=args.skip_collision_inertia,
-        skip_collision_mass=args.skip_collision_mass,
-        joint_drive=JointDriveCfg(
-            target_type=args.joint_target_type,
-            stiffness=args.joint_stiffness,
-            damping=args.joint_damping,
-        ),
-        frame_link_mass=args.frame_link_mass,
-        frame_link_inertia=args.frame_link_inertia,
-        exclude_geometry_names=args.exclude_geometry,
-        mjcf_add_actuators=not args.no_actuators,
-    )
+    config = _build_config(args)
 
     from . import convert
 

@@ -76,6 +76,28 @@ def test_cli_unknown_suffix(two_link_urdf, tmp_path):
     assert result.returncode != 0
 
 
+def test_cli_preset_mujoco_merges(two_link_urdf, tmp_path):
+    out = tmp_path / "robot.xml"
+    result = _run([str(two_link_urdf), "-o", str(out), "--preset", "mujoco", "--fix-base"])
+    assert result.returncode == 0, result.stderr
+    body_names = [b.get("name") for b in ET.parse(out).getroot().iter("body")]
+    # the mujoco preset merges fixed joints: the fixed tip_frame link is gone
+    assert "tip_frame" not in body_names
+
+
+def test_cli_flag_overrides_preset(two_link_urdf, tmp_path):
+    out = tmp_path / "robot.xml"
+    # preset turns merging on; --keep-fixed-link-inertials flips ignore_inertia off,
+    # which keeps mass-carrying links but still folds massless frames like tip_frame.
+    result = _run(
+        [str(two_link_urdf), "-o", str(out), "--preset", "isaaclab", "--keep-fixed-link-inertials"]
+    )
+    assert result.returncode == 0, result.stderr
+    body_names = [b.get("name") for b in ET.parse(out).getroot().iter("body")]
+    assert "arm_link" in body_names  # mass-carrying link kept as its own body
+    assert "tip_frame" not in body_names  # massless frame still merged
+
+
 def test_console_script_entry_point(two_link_urdf, tmp_path):
     script = shutil.which("urdf2any")
     if script is None:

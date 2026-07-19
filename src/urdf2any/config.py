@@ -74,6 +74,33 @@ class ConvertConfig:
     mjcf_assets_dir: str = "assets"
     mjcf_add_actuators: bool = True
 
+    @classmethod
+    def isaaclab(cls, **overrides) -> ConvertConfig:
+        """Preset matching the IsaacLab URDF importer's default behaviour.
+
+        IsaacLab's ``UrdfConverterCfg`` defaults ``merge_fixed_joints=True`` and
+        wires ``merge_fixed_ignore_inertia`` to the same value, so every
+        fixed-joint link is collapsed. Keyword overrides are applied on top.
+        """
+        cfg = cls(merge_fixed_joints=True, merge_fixed_ignore_inertia=True)
+        for key, value in overrides.items():
+            setattr(cfg, key, value)
+        return cfg
+
+    @classmethod
+    def mujoco(cls, **overrides) -> ConvertConfig:
+        """Preset matching MuJoCo's native URDF conversion.
+
+        MuJoCo always merges fixed-joint links on URDF import and derives the
+        mass of inertial-less links from collision geometry, so merging enables
+        ``compute_missing_inertials`` (requires the optional ``mujoco``
+        dependency). Keyword overrides are applied on top.
+        """
+        cfg = cls(merge_fixed_joints=True, compute_missing_inertials=True)
+        for key, value in overrides.items():
+            setattr(cfg, key, value)
+        return cfg
+
 
 def _resolve_per_joint(value: PerJoint | PerJointStr, joint_name: str, what: str):
     if not isinstance(value, dict):

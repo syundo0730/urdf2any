@@ -139,6 +139,64 @@ def test_ignore_inertia_true_merges_everything(tmp_path):
     assert robot.links["base"].inertial.mass == pytest.approx(3.0)
 
 
+def test_compute_missing_inertials_backfills_geom_mass(tmp_path):
+    pytest.importorskip("mujoco")
+    # parent has authored inertial; child has only a box collision (geometry mass).
+    # Without backfill the child's mass would be lost in the merge.
+    urdf = tmp_path / "mixed.urdf"
+    urdf.write_text(
+        textwrap.dedent(
+            """\
+            <robot name="mixed">
+              <link name="base">
+                <inertial><mass value="1.0"/>
+                  <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/></inertial>
+              </link>
+              <link name="attachment">
+                <collision><geometry><box size="0.1 0.1 0.1"/></geometry></collision>
+              </link>
+              <joint name="weld" type="fixed">
+                <parent link="base"/><child link="attachment"/><origin xyz="0.2 0 0"/>
+              </joint>
+            </robot>
+            """
+        )
+    )
+    robot = parse_urdf(urdf)
+    apply_config(
+        robot,
+        ConvertConfig(merge_fixed_joints=True, compute_missing_inertials=True, joint_drive=None),
+    )
+    # MuJoCo default density 1000 kg/m^3: box 0.1^3 -> 1.0 kg. Combined = 2.0.
+    inertial = robot.links["base"].inertial
+    assert inertial.mass == pytest.approx(2.0, rel=1e-6)
+    # COM halfway between origin (1kg authored) and x=0.2 (1kg box)
+    assert np.allclose(inertial.origin.translation, [0.1, 0.0, 0.0], atol=1e-9)
+
+
+def test_compute_missing_probe_matches_analytic_box(tmp_path):
+    pytest.importorskip("mujoco")
+    from urdf2any.geom_inertia import compute_link_inertial
+
+    robot = parse_urdf(_box_link_urdf(tmp_path))
+    inertial = compute_link_inertial(robot.links["b"])
+    # box 0.2x0.3x0.4, density 1000 -> m=24, I = m/12*(b^2+c^2) about each axis
+    assert inertial.mass == pytest.approx(24.0, rel=1e-6)
+    diag = sorted(np.diag(inertial.inertia))
+    expect = sorted([24 / 12 * (0.09 + 0.16), 24 / 12 * (0.04 + 0.16), 24 / 12 * (0.04 + 0.09)])
+    assert np.allclose(diag, expect, rtol=1e-6)
+
+
+def _box_link_urdf(tmp_path) -> Path:
+    urdf = tmp_path / "box.urdf"
+    urdf.write_text(
+        """<robot name="box"><link name="b">
+             <collision><geometry><box size="0.2 0.3 0.4"/></geometry></collision>
+           </link></robot>"""
+    )
+    return urdf
+
+
 def test_ignore_inertia_false_keeps_mass_bodies(tmp_path):
     robot = parse_urdf(_body_then_frame_urdf(tmp_path))
     apply_config(robot, ConvertConfig(merge_fixed_joints=True, merge_fixed_ignore_inertia=False,

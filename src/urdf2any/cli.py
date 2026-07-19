@@ -45,6 +45,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "(Isaac Sim 5.1+ behavior); default merges all fixed links",
     )
     parser.add_argument(
+        "--compute-missing-inertials",
+        action="store_true",
+        help="When merging mixes authored and geometry-derived masses, compute the "
+        "missing inertial from collision geometry via MuJoCo (requires mujoco)",
+    )
+    parser.add_argument(
         "--skip-collision-inertia",
         action="store_true",
         help="Omit authored inertia/COM on collision links; let the consumer compute them",
@@ -105,6 +111,7 @@ def main(argv: list[str] | None = None) -> int:
         replace_cylinders_with_capsules=args.replace_cylinders_with_capsules,
         merge_fixed_joints=args.merge_fixed_joints,
         merge_fixed_ignore_inertia=args.merge_fixed_ignore_inertia,
+        compute_missing_inertials=args.compute_missing_inertials,
         skip_collision_inertia=args.skip_collision_inertia,
         skip_collision_mass=args.skip_collision_mass,
         joint_drive=JointDriveCfg(

@@ -48,6 +48,14 @@ class ConvertConfig:
     #          massless reference frames (Isaac Sim 5.1+ behaviour).
     # Mirrors the importer's set_merge_fixed_ignore_inertia knob.
     merge_fixed_ignore_inertia: bool = True
+    # When merging mixes an authored-inertial link with a geometry-massed one
+    # (collision geoms, no authored <inertial>), compute the missing inertial
+    # from the collision geometry via MuJoCo before combining — otherwise the
+    # authored value masks the geometry and its mass is silently lost (MuJoCo's
+    # native URDF import does include it). Opt-in: requires the optional
+    # `mujoco` dependency, and adds authored inertials the Isaac Sim importer
+    # would not (leave off when matching IsaacLab USD output).
+    compute_missing_inertials: bool = False
     joint_drive: JointDriveCfg | None = field(default_factory=JointDriveCfg)
     # Set a small inertial on frame-only links (no visual/collision), overwriting
     # any authored inertial. None disables.
@@ -83,7 +91,11 @@ def apply_config(robot: Robot, config: ConvertConfig) -> None:
     if config.replace_cylinders_with_capsules:
         _replace_cylinders(robot)
     if config.merge_fixed_joints:
-        _merge_fixed_joints(robot, ignore_inertia=config.merge_fixed_ignore_inertia)
+        _merge_fixed_joints(
+            robot,
+            ignore_inertia=config.merge_fixed_ignore_inertia,
+            compute_missing=config.compute_missing_inertials,
+        )
     if config.frame_link_mass is not None and config.frame_link_inertia is not None:
         _add_frame_link_inertials(robot, config.frame_link_mass, config.frame_link_inertia)
     if config.skip_collision_inertia or config.skip_collision_mass:
@@ -141,7 +153,9 @@ def _has_body(link) -> bool:
     return bool(inertial.mass and inertial.mass > 0.0) or inertial.inertia is not None
 
 
-def _merge_fixed_joints(robot: Robot, ignore_inertia: bool = True) -> None:
+def _merge_fixed_joints(
+    robot: Robot, ignore_inertia: bool = True, compute_missing: bool = False
+) -> None:
     """Collapse fixed-joint children into their parent link, in place.
 
     Port of the URDF importer's ``mergeFixedChildLinks``
@@ -154,10 +168,31 @@ def _merge_fixed_joints(robot: Robot, ignore_inertia: bool = True) -> None:
     child (Isaac Sim <=2.4.31 / Isaac Lab), False keeps children that carry
     mass/inertia as separate bodies and collapses only massless frames
     (Isaac Sim 5.1+).
+
+    ``compute_missing``: when a merge pairs an authored-inertial link with a
+    geometry-massed one, derive the missing inertial from collision geometry via
+    MuJoCo first, so the geometry's mass is not masked by the authored value.
     """
     # Snapshot the original child-joint lists; mutations below re-parent joints
     # on the live robot, but the traversal follows the original tree.
     original_children = {name: list(joints) for name, joints in robot.child_joints().items()}
+
+    def backfill(parent, child) -> None:
+        # Only a *mixed* pair loses mass: with no authored inertial anywhere the
+        # consumer still computes everything from the combined geometry.
+        if _has_body(parent) == _has_body(child):
+            return
+        from .geom_inertia import compute_link_inertial
+
+        target = child if not _has_body(child) else parent
+        computed = compute_link_inertial(target)
+        if computed is not None:
+            target.inertial = computed
+            logger.info(
+                "Computed geometry inertial for link %r (mass=%.6g) before merge",
+                target.name,
+                computed.mass,
+            )
 
     def visit(link_name: str) -> None:
         for joint in original_children[link_name]:
@@ -166,6 +201,8 @@ def _merge_fixed_joints(robot: Robot, ignore_inertia: bool = True) -> None:
                 continue
             if not ignore_inertia and _has_body(robot.links[joint.child]):
                 continue  # Isaac Sim 5.1+: keep mass/inertia links as full bodies
+            if compute_missing:
+                backfill(robot.links[link_name], robot.links[joint.child])
             transform = joint.origin
             parent = robot.links[link_name]
             child = robot.links[joint.child]

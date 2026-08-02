@@ -17,11 +17,12 @@ reviews:
     drafts: false
     base_branches:
       - main
-  # Vendored robot assets are LFS binaries and the lockfile is generated; neither
-  # is reviewable. Goldens stay in scope on purpose — see the instructions below.
+  # Vendored mesh binaries are stored via LFS and the lockfile is generated;
+  # neither is reviewable. The URDF fixtures are canonical parity-suite inputs
+  # and goldens stay in scope on purpose — see the instructions below.
   path_filters:
     - "!uv.lock"
-    - "!tests/assets/**"
+    - "!tests/assets/**/meshes/**"
   path_instructions:
     - path: "src/urdf2any/ir.py"
       instructions: >-
@@ -55,6 +56,13 @@ reviews:
         loader. Flag conversion-behavior changes that arrive without a
         corresponding parity assertion, and flag tolerances loosened without a
         stated reason.
+    - path: "tests/assets/**/*.urdf"
+      instructions: >-
+        These vendored URDFs are canonical inputs to both parity suites (see
+        tests/parity/samples.json). An edit here silently changes what the
+        parity and golden tests assert against: check that the PR justifies the
+        fixture change, and be suspicious of a fixture edited together with
+        goldens or tolerances to make a failing test pass.
     - path: "tests/golden/**"
       instructions: >-
         These are IsaacLab importer reference goldens, regenerated only via

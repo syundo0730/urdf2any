@@ -77,16 +77,19 @@ class SkinnedModel:
 
 
 def load_skinned_meshes(
-    dae_path: str | Path,
+    path: str | Path,
     robot: Robot,
     bone_links: dict[str, str],
     *,
     bind_pose_tolerance: float = BIND_POSE_TOLERANCE,
 ) -> SkinnedModel:
-    """Load a skinned DAE and bake it against the robot's zero-pose kinematics.
+    """Load a skinned mesh file and bake it against the robot's zero-pose kinematics.
 
     Args:
-        dae_path: Collada file containing one or more skin controllers.
+        path: Skinned mesh file containing one or more skin controllers.
+            Currently Collada (``.dae``) only; loaders for other skinned
+            formats (e.g. glTF) can dispatch on the suffix here without
+            changing this API.
         robot: Parsed IR. Its zero-configuration FK defines the bind pose, so it
             must be the same (possibly preprocessed) robot the backend emits.
         bone_links: DAE bone (joint sid) -> link name. Declarative and complete:
@@ -100,22 +103,22 @@ def load_skinned_meshes(
             mapping that points at an unknown link, or unsupported DAE content.
         ImportError: if the optional ``pycollada`` dependency is missing.
     """
-    dae_path = Path(dae_path)
-    dae = _load_collada(dae_path)
+    path = Path(path)
+    dae = _load_collada(path)
     bind_poses = robot.link_world_transforms()
 
     joint_world = _joint_world_transforms(dae)
     _verify_bind_pose(joint_world, bone_links, bind_poses, bind_pose_tolerance)
 
     model = SkinnedModel(
-        meshes=_collect_meshes(dae, dae_path, joint_world, bone_links),
+        meshes=_collect_meshes(dae, path, joint_world, bone_links),
         bind_poses=bind_poses,
     )
     logger.info(
         "Loaded %d skinned mesh(es) (%d vertices) from %s",
         len(model.meshes),
         sum(len(m.vertices) for m in model.meshes),
-        dae_path.name,
+        path.name,
     )
     return model
 

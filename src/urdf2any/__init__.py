@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .backends.mjcf import mjcf_body_names
 from .backends.mjcf_skin import SkinAsset, write_mjcf_skins
 from .config import ConvertConfig, JointDriveCfg
 from .ir import Robot
@@ -26,6 +27,7 @@ __all__ = [
     "convert",
     "convert_robot",
     "load_skinned_meshes",
+    "mjcf_body_names",
     "write_mjcf_skins",
 ]
 

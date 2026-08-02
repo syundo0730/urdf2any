@@ -56,6 +56,7 @@ def write_mjcf_skins(
     out_dir: str | Path,
     *,
     name_prefix: str = "",
+    body_names: dict[str, str] | None = None,
 ) -> list[SkinAsset]:
     """Write one ``.skn`` per skinned mesh into ``out_dir``, plus its textures.
 
@@ -65,26 +66,35 @@ def write_mjcf_skins(
             missing. Typically the MJCF model's asset directory.
         name_prefix: Prepended (with an underscore) to every skin name, to keep
             several robots' skins apart in one asset namespace.
+        body_names: Link name -> emitted MJCF body name. Required whenever the
+            model's body names differ from the IR's link names — ``fix_base``
+            folds the root link into the worldbody ("world"), and reserved link
+            names are renamed. Get it from
+            :func:`urdf2any.backends.mjcf.mjcf_body_names`. Links absent from
+            the map keep their own name.
 
     Returns:
-        One :class:`SkinAsset` per mesh, in model order.
+        One :class:`SkinAsset` per mesh, in model order. ``bones`` holds the
+        translated body names actually written to the files.
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    body_names = body_names or {}
 
     assets: list[SkinAsset] = []
+    copied_textures: dict[str, Path] = {}
     for mesh in model.meshes:
         name = f"{name_prefix}_{mesh.name}" if name_prefix else mesh.name
         path = out_dir / f"{name}.skn"
-        _write_skn(path, mesh, model.bind_poses)
-        texture_file = _copy_texture(mesh.texture, out_dir) if mesh.texture else None
+        _write_skn(path, mesh, model.bind_poses, body_names)
+        texture_file = _copy_texture(mesh.texture, out_dir, copied_textures) if mesh.texture else None
         assets.append(
             SkinAsset(
                 name=name,
                 file=path.name,
                 texture_file=texture_file,
                 rgba=None if texture_file else _rgba(mesh),
-                bones=tuple(mesh.bone_links()),
+                bones=tuple(body_names.get(link, link) for link in mesh.bone_links()),
                 vertex_count=len(mesh.vertices),
             )
         )
@@ -103,14 +113,23 @@ def _rgba(mesh: SkinnedMesh) -> tuple[float, float, float, float]:
     return values if len(values) == 4 else (*values[:3], 1.0)
 
 
-def _copy_texture(texture: Path, out_dir: Path) -> str:
+def _copy_texture(texture: Path, out_dir: Path, copied: dict[str, Path]) -> str:
+    source = texture.resolve()
+    prior = copied.get(texture.name)
+    if prior is not None and prior != source:
+        # Two textures collapsing to one basename would silently shadow each
+        # other in the flat output directory.
+        raise ValueError(f"texture name collision: {prior} and {source} both copy to {texture.name}")
+    copied[texture.name] = source
     dest = out_dir / texture.name
-    if dest.resolve() != texture.resolve():
+    if dest.resolve() != source:
         dest.write_bytes(texture.read_bytes())
     return dest.name
 
 
-def _write_skn(path: Path, mesh: SkinnedMesh, bind_poses: dict[str, Transform]) -> None:
+def _write_skn(
+    path: Path, mesh: SkinnedMesh, bind_poses: dict[str, Transform], body_names: dict[str, str]
+) -> None:
     links = mesh.bone_links()
     ntexcoord = len(mesh.uv) if mesh.uv is not None else 0
     with path.open("wb") as f:
@@ -121,10 +140,11 @@ def _write_skn(path: Path, mesh: SkinnedMesh, bind_poses: dict[str, Transform]) 
         f.write(mesh.faces.astype("<i4").tobytes())
         for link in links:
             pose = bind_poses[link]
-            name = link.encode("utf-8")
+            body = body_names.get(link, link)
+            name = body.encode("utf-8")
             if len(name) >= BONE_NAME_BYTES:
                 raise ValueError(
-                    f"link name {link!r} does not fit the skn bone name field "
+                    f"body name {body!r} does not fit the skn bone name field "
                     f"({BONE_NAME_BYTES - 1} bytes)"
                 )
             f.write(name.ljust(BONE_NAME_BYTES, b"\x00"))

@@ -14,6 +14,9 @@ Conventions and known divergences:
   (:meth:`~urdf2any.ir.Robot.link_world_transforms`), never from a compiled
   simulator model: the DAE must agree with the URDF, and this module verifies it
   rather than trusting it.
+- The DAE's ``<unit>`` and ``<up_axis>`` asset metadata are applied on load, so
+  baked vertices and bone rest positions are always SI meters, Z-up — the IR
+  convention — regardless of how the document was authored.
 - Texture coordinates are stored V-flipped (``v' = 1 - v``). Collada's UV origin
   is bottom-left; MuJoCo skins (and UsdSkel/glTF) use top-left.
 - Vertices are de-duplicated on (position index, *rounded UV value*), not on UV
@@ -29,6 +32,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import unquote
 
 import numpy as np
 
@@ -130,8 +134,33 @@ def _load_collada(dae_path: Path):
     return dae
 
 
+# Rotations taking a document's up axis onto the IR's Z-up convention.
+_UP_AXIS_ROTATIONS = {
+    "Z_UP": np.eye(3),
+    "Y_UP": np.array([[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]]),
+    "X_UP": np.array([[0.0, 0.0, -1.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]]),
+}
+
+
+def _asset_transform(dae) -> np.ndarray:
+    """4x4 mapping document space to SI meters, Z-up (the IR convention)."""
+    info = dae.assetInfo
+    scale = float(info.unitmeter) if info is not None and info.unitmeter else 1.0
+    up_axis = info.upaxis if info is not None and info.upaxis else "Z_UP"
+    rotation = _UP_AXIS_ROTATIONS.get(up_axis)
+    if rotation is None:
+        raise ValueError(f"unsupported Collada up_axis {up_axis!r}")
+    transform = np.eye(4)
+    transform[:3, :3] = rotation * scale
+    return transform
+
+
 def _joint_world_transforms(dae) -> dict[str, np.ndarray]:
-    """Walk the scene graph: bone sid -> 4x4 world matrix at the DAE's rest pose."""
+    """Walk the scene graph: bone sid -> 4x4 world matrix at the DAE's rest pose.
+
+    Seeded with the asset's unit/up-axis conversion, so the returned transforms
+    (and everything skinned through them) are already SI, Z-up.
+    """
     from collada.scene import Node
 
     world: dict[str, np.ndarray] = {}
@@ -146,8 +175,9 @@ def _joint_world_transforms(dae) -> dict[str, np.ndarray]:
         for child in getattr(node, "children", []):
             walk(child, transform)
 
+    root = _asset_transform(dae)
     for node in dae.scene.nodes:
-        walk(node, np.eye(4))
+        walk(node, root)
     return world
 
 
@@ -290,6 +320,23 @@ def _material_bindings(dae) -> dict[str, dict[str, object]]:
     return bindings
 
 
+def _resolve_texture(image_path: str, dae_dir: Path) -> Path:
+    """Resolve an ``<init_from>`` image reference against the DAE's directory.
+
+    The raw value may be percent-encoded and may carry subdirectories. Exporters
+    also bake in absolute paths from the authoring machine, so when the full
+    path does not resolve, fall back to the bare file name next to the DAE.
+    """
+    raw = unquote(image_path).removeprefix("file://")
+    path = Path(raw)
+    candidates = [] if path.is_absolute() else [dae_dir / path]
+    candidates.append(dae_dir / path.name)
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise ValueError(f"texture {raw!r} not found relative to {dae_dir}")
+
+
 def _appearance(
     material_symbol: str, bindings: dict[str, object], dae_dir: Path
 ) -> tuple[Path | None, np.ndarray | None]:
@@ -299,11 +346,7 @@ def _appearance(
         return None, _DEFAULT_RGBA.copy()
     diffuse = material.effect.diffuse
     if diffuse is not None and hasattr(diffuse, "sampler"):
-        # Textures are referenced by file name relative to the DAE.
-        texture = dae_dir / Path(diffuse.sampler.surface.image.path).name
-        if not texture.exists():
-            raise ValueError(f"texture {texture} referenced by {material_symbol!r} not found")
-        return texture, None
+        return _resolve_texture(diffuse.sampler.surface.image.path, dae_dir), None
     if isinstance(diffuse, tuple):
         return None, np.asarray(diffuse, dtype=float)
     return None, _DEFAULT_RGBA.copy()
@@ -341,11 +384,25 @@ def _collect_meshes(
                     f"unsupported primitive {type(primitive).__name__} in {controller.id!r} "
                     "(skins must be triangulated)"
                 )
+            if len(primitive.vertex) != len(positions):
+                # Skin weights are per-vertex of the geometry's first position
+                # source; a primitive on a different source cannot reuse them.
+                raise ValueError(
+                    f"primitive {index} of {controller.id!r} uses a different position "
+                    "source than the skinned one (unsupported)"
+                )
+            name = _mesh_name(controller.id, index)
+            if any(mesh.name == name for mesh in meshes):
+                # Stripping exporter decoration can collapse distinct controller
+                # ids; failing here beats silently overwriting a .skn file.
+                raise ValueError(
+                    f"duplicate skinned mesh name {name!r} (from controller {controller.id!r})"
+                )
             vertices, uv, faces, weights = _split_primitive(primitive, positions, vertex_weights)
             texture, color = _appearance(primitive.material, controller_bindings, dae_path.parent)
             meshes.append(
                 SkinnedMesh(
-                    name=_mesh_name(controller.id, index),
+                    name=name,
                     vertices=vertices,
                     faces=faces,
                     uv=uv,

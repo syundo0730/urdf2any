@@ -60,6 +60,20 @@ def _safe_body_names(robot: Robot) -> dict[str, str]:
     return names
 
 
+def mjcf_body_names(robot: Robot, config: ConvertConfig) -> dict[str, str]:
+    """Link name -> body name as ``convert_mjcf`` will emit it.
+
+    Two cases diverge from the link name: reserved names are renamed, and with
+    ``fix_base`` the root link is folded into the implicit worldbody, which
+    MuJoCo names ``"world"``. Anything that must reference emitted bodies by
+    name (e.g. skin bones, see ``write_mjcf_skins``) needs this map.
+    """
+    names = _safe_body_names(robot)
+    if config.fix_base:
+        names[robot.root_link_name()] = "world"
+    return names
+
+
 def convert_mjcf(robot: Robot, output_path: str | Path, config: ConvertConfig) -> Path:
     output_path = Path(output_path).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)

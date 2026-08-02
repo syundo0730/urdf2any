@@ -9,17 +9,24 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .backends.mjcf_skin import SkinAsset, write_mjcf_skins
 from .config import ConvertConfig, JointDriveCfg
 from .ir import Robot
+from .skin import SkinnedMesh, SkinnedModel, load_skinned_meshes
 from .urdf.parser import parse_urdf
 
 __all__ = [
     "ConvertConfig",
     "JointDriveCfg",
     "Robot",
+    "SkinAsset",
+    "SkinnedMesh",
+    "SkinnedModel",
     "parse_urdf",
     "convert",
     "convert_robot",
+    "load_skinned_meshes",
+    "write_mjcf_skins",
 ]
 
 

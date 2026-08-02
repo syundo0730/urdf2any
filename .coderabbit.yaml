@@ -1,0 +1,92 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+tone_instructions: >-
+  Be concise and technical. Point at the specific line and the concrete failure
+  mode; skip praise and restating the diff.
+early_access: false
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  collapse_walkthrough: true
+  sequence_diagrams: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+  # Vendored robot assets are LFS binaries and the lockfile is generated; neither
+  # is reviewable. Goldens stay in scope on purpose — see the instructions below.
+  path_filters:
+    - "!uv.lock"
+    - "!tests/assets/**"
+  path_instructions:
+    - path: "src/urdf2any/ir.py"
+      instructions: >-
+        The IR is simulator-agnostic and uses SI units and radians. Flag any
+        backend-specific concept (USD prim paths, MJCF element names, degrees,
+        solver settings) or robot-specific policy (link name literals, part
+        removal, gain values) that leaks into this layer.
+    - path: "src/urdf2any/{config,cli}.py"
+      instructions: >-
+        Preprocessing here (fixed-joint merging, drive injection, geometry
+        exclusion) must stay generic and declarative. Robot-specific literals
+        belong in caller code, not here. New behavior should be reachable from
+        both backends, and CLI flags should keep parity with the config dataclass
+        fields they expose.
+    - path: "src/urdf2any/backends/**"
+      instructions: >-
+        Unit conversion is the backend's responsibility (USD uses degrees, the IR
+        does not). Backends must not mutate the IR they are handed. Known
+        divergences from the reference importers belong in the module docstring,
+        not in scattered comments.
+    - path: "src/urdf2any/**/*.py"
+      instructions: >-
+        Prefer documenting long-lived conventions in module docstrings over new
+        prose files. Public API changes must stay consistent between the USD and
+        MJCF paths so the same config yields the same physical robot.
+    - path: "tests/**/*.py"
+      instructions: >-
+        Compatibility claims must be backed by a parity test:
+        tests/test_golden_parity.py compares against IsaacLab importer goldens
+        and tests/test_mjcf_parity.py compares live against MuJoCo's native URDF
+        loader. Flag conversion-behavior changes that arrive without a
+        corresponding parity assertion, and flag tolerances loosened without a
+        stated reason.
+    - path: "tests/golden/**"
+      instructions: >-
+        These are IsaacLab importer reference goldens, regenerated only via
+        scripts/generate_reference.py inside an IsaacLab container. A diff here
+        means converter output changed: check that the PR explains why the new
+        values are correct, and treat a golden edited by hand to make a failing
+        test pass as a defect.
+    - path: ".github/workflows/**"
+      instructions: >-
+        The parity tests load meshes vendored via Git LFS, so checkout steps that
+        run tests need `lfs: true`. Pin actions to a major version tag.
+  tools:
+    ruff:
+      enabled: true
+    actionlint:
+      enabled: true
+    gitleaks:
+      enabled: true
+    markdownlint:
+      enabled: false
+  finishing_touches:
+    docstrings:
+      enabled: true
+    unit_tests:
+      enabled: false
+
+chat:
+  art: false
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "CLAUDE.md"
+      - "AGENTS.md"

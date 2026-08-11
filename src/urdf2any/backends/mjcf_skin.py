@@ -30,7 +30,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ..skin import SkinnedMesh, SkinnedModel
+from ..skin import DEFAULT_RGBA, SkinnedMesh, SkinnedModel
 from ..transforms import Transform
 
 logger = logging.getLogger(__name__)
@@ -86,7 +86,7 @@ def write_mjcf_skins(
     for mesh in model.meshes:
         name = f"{name_prefix}_{mesh.name}" if name_prefix else mesh.name
         path = out_dir / f"{name}.skn"
-        _write_skn(path, mesh, model.bind_poses, body_names)
+        bones = _write_skn(path, mesh, model.bind_poses, body_names)
         texture_file = _copy_texture(mesh.texture, out_dir, copied_textures) if mesh.texture else None
         assets.append(
             SkinAsset(
@@ -94,7 +94,7 @@ def write_mjcf_skins(
                 file=path.name,
                 texture_file=texture_file,
                 rgba=None if texture_file else _rgba(mesh),
-                bones=tuple(body_names.get(link, link) for link in mesh.bone_links()),
+                bones=bones,
                 vertex_count=len(mesh.vertices),
             )
         )
@@ -108,29 +108,34 @@ def write_mjcf_skins(
 
 
 def _rgba(mesh: SkinnedMesh) -> tuple[float, float, float, float]:
-    color = mesh.color if mesh.color is not None else np.array([0.5, 0.5, 0.5, 1.0])
-    values = tuple(float(v) for v in color)
-    return values if len(values) == 4 else (*values[:3], 1.0)
+    color = mesh.color if mesh.color is not None else DEFAULT_RGBA
+    return tuple(float(v) for v in color)
 
 
 def _copy_texture(texture: Path, out_dir: Path, copied: dict[str, Path]) -> str:
     source = texture.resolve()
     prior = copied.get(texture.name)
-    if prior is not None and prior != source:
-        # Two textures collapsing to one basename would silently shadow each
-        # other in the flat output directory.
-        raise ValueError(f"texture name collision: {prior} and {source} both copy to {texture.name}")
+    if prior is not None:
+        if prior != source:
+            # Two textures collapsing to one basename would silently shadow
+            # each other in the flat output directory.
+            raise ValueError(
+                f"texture name collision: {prior} and {source} both copy to {texture.name}"
+            )
+        return texture.name  # already copied for an earlier mesh
     copied[texture.name] = source
     dest = out_dir / texture.name
     if dest.resolve() != source:
         dest.write_bytes(texture.read_bytes())
-    return dest.name
+    return texture.name
 
 
 def _write_skn(
     path: Path, mesh: SkinnedMesh, bind_poses: dict[str, Transform], body_names: dict[str, str]
-) -> None:
+) -> tuple[str, ...]:
+    """Write one skin binary; returns the bone (body) names actually written."""
     links = mesh.bone_links()
+    bodies = tuple(body_names.get(link, link) for link in links)
     ntexcoord = len(mesh.uv) if mesh.uv is not None else 0
     with path.open("wb") as f:
         f.write(struct.pack("<4i", len(mesh.vertices), ntexcoord, len(mesh.faces), len(links)))
@@ -138,9 +143,8 @@ def _write_skn(
         if mesh.uv is not None:
             f.write(mesh.uv.astype("<f4").tobytes())
         f.write(mesh.faces.astype("<i4").tobytes())
-        for link in links:
+        for link, body in zip(links, bodies, strict=True):
             pose = bind_poses[link]
-            body = body_names.get(link, link)
             name = body.encode("utf-8")
             if len(name) >= BONE_NAME_BYTES:
                 raise ValueError(
@@ -155,3 +159,4 @@ def _write_skn(
             f.write(struct.pack("<i", len(vertex_ids)))
             f.write(np.asarray(vertex_ids, dtype="<i4").tobytes())
             f.write(np.asarray([weights[i] for i in vertex_ids], dtype="<f4").tobytes())
+    return bodies

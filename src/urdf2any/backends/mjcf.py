@@ -66,7 +66,12 @@ def mjcf_body_names(robot: Robot, config: ConvertConfig) -> dict[str, str]:
     Two cases diverge from the link name: reserved names are renamed, and with
     ``fix_base`` the root link is folded into the implicit worldbody, which
     MuJoCo names ``"world"``. Anything that must reference emitted bodies by
-    name (e.g. skin bones, see ``write_mjcf_skins``) needs this map.
+    name (e.g. skin bones, see ``write_mjcf_skins``) needs this map. The writer
+    itself consumes this function, so the two cannot drift.
+
+    Call it on the same robot the backend emits — i.e. after ``convert_robot``
+    / ``apply_config`` — since preprocessing such as fixed-joint merging removes
+    links from the map.
     """
     names = _safe_body_names(robot)
     if config.fix_base:
@@ -110,7 +115,9 @@ class _MjcfWriter:
         self.material_names: set[str] = set()
         self.children = robot.child_joints()
         self.actuated: list[Joint] = []
-        self.body_names = _safe_body_names(robot)
+        # Under fix_base the map sends the root to "world"; the writer never
+        # looks it up (the folded root emits no <body>), so sharing is safe.
+        self.body_names = mjcf_body_names(robot, config)
 
     def build(self) -> ET.Element:
         root = ET.Element("mujoco", model=self.robot.name)

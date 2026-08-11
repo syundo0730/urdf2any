@@ -22,6 +22,12 @@ Conventions and known divergences:
 - Vertices are de-duplicated on (position index, *rounded UV value*), not on UV
   index: Blender's exporter emits a distinct UV index per face corner, so keying
   on the index would split every shared vertex and flatten the shading.
+- Mesh names strip Blender's ``Armature_<name>-skin`` controller-id decoration
+  to recover the authored name; two controllers decoding to the same name are
+  rejected rather than silently merged.
+- Texture references resolve more leniently than the URDF parser's strict
+  policy: after the document-relative path, the bare file name next to the DAE
+  is tried, because exporters bake in absolute authoring-machine paths.
 
 The bone -> link mapping is caller-supplied policy; nothing here guesses names.
 Requires the optional ``pycollada`` dependency (``pip install "urdf2any[skin]"``).
@@ -30,7 +36,7 @@ Requires the optional ``pycollada`` dependency (``pip install "urdf2any[skin]"``
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -48,7 +54,8 @@ BIND_POSE_TOLERANCE = 1e-3
 # UV values are compared at this many decimals when de-duplicating vertices.
 _UV_DECIMALS = 6
 
-_DEFAULT_RGBA = np.array([0.5, 0.5, 0.5, 1.0])
+# Color of a skinned mesh whose material has no texture and no diffuse color.
+DEFAULT_RGBA = np.array([0.5, 0.5, 0.5, 1.0])
 
 
 @dataclass
@@ -72,8 +79,8 @@ class SkinnedMesh:
 class SkinnedModel:
     """All skinned primitives of one DAE, plus the bind pose they were baked at."""
 
-    meshes: list[SkinnedMesh] = field(default_factory=list)
-    bind_poses: dict[str, Transform] = field(default_factory=dict)  # link name -> world
+    meshes: list[SkinnedMesh]
+    bind_poses: dict[str, Transform]  # link name -> world
 
 
 def load_skinned_meshes(
@@ -214,7 +221,30 @@ def _verify_bind_pose(
             )
 
 
-def _bind_positions(skin, joint_world: dict[str, np.ndarray]) -> np.ndarray:
+def _vertex_influences(skin) -> list[list[tuple[int, float]]]:
+    """Per vertex: (joint index, raw weight) pairs, in document order.
+
+    The one place that decodes pycollada's ragged weight arrays: joint index -1
+    (the bind-shape "joint") and zero weights are dropped here, and a vertex
+    left with no influence is an error. Weights stay raw; callers normalize.
+    """
+    influences: list[list[tuple[int, float]]] = []
+    for vi in range(len(skin.joint_index)):
+        pairs: list[tuple[int, float]] = []
+        for j, w in zip(skin.joint_index[vi], skin.weight_index[vi], strict=True):
+            weight = float(skin.weights[w][0])
+            if j < 0 or weight == 0.0:
+                continue
+            pairs.append((int(j), weight))
+        if not pairs:
+            raise ValueError(f"vertex {vi} has no skinning weights")
+        influences.append(pairs)
+    return influences
+
+
+def _bind_positions(
+    skin, joint_world: dict[str, np.ndarray], influences: list[list[tuple[int, float]]]
+) -> np.ndarray:
     """Skin the mesh into world space at the bind pose.
 
     ``v_bind = sum_j w_j * W_j * IBM_j * BSM * v`` with the weights normalized,
@@ -229,33 +259,27 @@ def _bind_positions(skin, joint_world: dict[str, np.ndarray]) -> np.ndarray:
         composed.append(joint_world[name] @ skin.joint_matrices[name] @ skin.bind_shape_matrix)
 
     result = np.zeros_like(positions)
-    for vi in range(len(positions)):
+    for vi, pairs in enumerate(influences):
         homogeneous = np.append(positions[vi], 1.0)
         accum = np.zeros(3)
         total = 0.0
-        for j, w in zip(skin.joint_index[vi], skin.weight_index[vi], strict=True):
-            weight = float(skin.weights[w][0])
-            if j < 0 or weight == 0.0:  # -1 is the bind-shape "joint"; skip it
-                continue
+        for j, weight in pairs:
             accum += weight * (composed[j] @ homogeneous)[:3]
             total += weight
-        if total <= 0.0:
-            raise ValueError(f"vertex {vi} has no skinning weights")
         result[vi] = accum / total
     return result
 
 
-def _vertex_link_weights(skin, bone_links: dict[str, str]) -> list[dict[str, float]]:
+def _vertex_link_weights(
+    skin, bone_links: dict[str, str], influences: list[list[tuple[int, float]]]
+) -> list[dict[str, float]]:
     """Per vertex: link name -> normalized weight (weights on one link merged)."""
     joints = list(skin.weight_joints)
     per_vertex: list[dict[str, float]] = []
-    for vi in range(len(skin.joint_index)):
+    for pairs in influences:
         weights: dict[str, float] = {}
         total = 0.0
-        for j, w in zip(skin.joint_index[vi], skin.weight_index[vi], strict=True):
-            weight = float(skin.weights[w][0])
-            if j < 0 or weight == 0.0:
-                continue
+        for j, weight in pairs:
             bone = joints[j]
             link = bone_links.get(bone)
             if link is None:
@@ -332,6 +356,8 @@ def _resolve_texture(image_path: str, dae_dir: Path) -> Path:
     """
     raw = unquote(image_path).removeprefix("file://")
     path = Path(raw)
+    # An absolute path is deliberately never tried as-is: it points into the
+    # authoring machine's filesystem, and only its basename is meaningful here.
     candidates = [] if path.is_absolute() else [dae_dir / path]
     candidates.append(dae_dir / path.name)
     for candidate in candidates:
@@ -345,14 +371,12 @@ def _appearance(
 ) -> tuple[Path | None, np.ndarray | None]:
     """(texture file, rgba) for a primitive's bound material; exactly one is set."""
     material = bindings.get(material_symbol)
-    if material is None:
-        return None, _DEFAULT_RGBA.copy()
-    diffuse = material.effect.diffuse
+    diffuse = material.effect.diffuse if material is not None else None
     if diffuse is not None and hasattr(diffuse, "sampler"):
         return _resolve_texture(diffuse.sampler.surface.image.path, dae_dir), None
     if isinstance(diffuse, tuple):
         return None, np.asarray(diffuse, dtype=float)
-    return None, _DEFAULT_RGBA.copy()
+    return None, DEFAULT_RGBA.copy()
 
 
 def _mesh_name(controller_id: str, primitive_index: int) -> str:
@@ -373,13 +397,15 @@ def _collect_meshes(
 
     bindings = _material_bindings(dae)
     meshes: list[SkinnedMesh] = []
+    seen_names: set[str] = set()
     for controller in dae.controllers:
         if not isinstance(controller, Skin):
             continue
-        positions = _bind_positions(controller, joint_world)
+        influences = _vertex_influences(controller)
+        positions = _bind_positions(controller, joint_world, influences)
         # Weighted bones are always in the scene graph (_bind_positions checks)
         # and therefore already validated against the robot by _verify_bind_pose.
-        vertex_weights = _vertex_link_weights(controller, bone_links)
+        vertex_weights = _vertex_link_weights(controller, bone_links, influences)
         controller_bindings = bindings.get(controller.id, {})
         for index, primitive in enumerate(controller.geometry.primitives):
             if not isinstance(primitive, TriangleSet):
@@ -395,12 +421,13 @@ def _collect_meshes(
                     "source than the skinned one (unsupported)"
                 )
             name = _mesh_name(controller.id, index)
-            if any(mesh.name == name for mesh in meshes):
+            if name in seen_names:
                 # Stripping exporter decoration can collapse distinct controller
                 # ids; failing here beats silently overwriting a .skn file.
                 raise ValueError(
                     f"duplicate skinned mesh name {name!r} (from controller {controller.id!r})"
                 )
+            seen_names.add(name)
             vertices, uv, faces, weights = _split_primitive(primitive, positions, vertex_weights)
             texture, color = _appearance(primitive.material, controller_bindings, dae_path.parent)
             meshes.append(

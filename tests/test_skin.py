@@ -267,7 +267,7 @@ def _write_png(path: Path) -> None:
 
 @pytest.fixture
 def skin_scene(tmp_path):
-    """(urdf path, dae writer) sharing one directory, as a real asset tree would."""
+    """(parsed robot, dae writer) sharing one directory, as a real asset tree would."""
     urdf = tmp_path / "robot.urdf"
     urdf.write_text(URDF, encoding="utf-8")
     _write_png(tmp_path / "skin_tex.png")
@@ -277,12 +277,12 @@ def skin_scene(tmp_path):
         dae.write_text(_dae_xml(**kwargs), encoding="utf-8")
         return dae
 
-    return urdf, write_dae
+    return parse_urdf(urdf), write_dae
 
 
 def _load(skin_scene, **kwargs):
-    urdf, write_dae = skin_scene
-    return load_skinned_meshes(write_dae(**kwargs), parse_urdf(urdf), BONE_LINKS)
+    robot, write_dae = skin_scene
+    return load_skinned_meshes(write_dae(**kwargs), robot, BONE_LINKS)
 
 
 # ----- baking ---------------------------------------------------------------
@@ -360,13 +360,13 @@ def test_unit_and_up_axis_metadata_are_normalized(skin_scene):
 
 
 def test_texture_in_a_subdirectory_is_resolved(skin_scene):
-    urdf, write_dae = skin_scene
+    robot, write_dae = skin_scene
     dae = write_dae(texture_path="textures/skin_tex.png")
     tex_dir = dae.parent / "textures"
     tex_dir.mkdir()
     # Move (not copy) the image so basename fallback cannot mask a bad lookup.
     (dae.parent / "skin_tex.png").rename(tex_dir / "skin_tex.png")
-    (mesh,) = load_skinned_meshes(dae, parse_urdf(urdf), BONE_LINKS).meshes
+    (mesh,) = load_skinned_meshes(dae, robot, BONE_LINKS).meshes
     assert mesh.texture == tex_dir / "skin_tex.png"
 
 
@@ -388,11 +388,9 @@ def test_weighted_bone_without_mapping_raises(skin_scene):
 
 
 def test_mapping_to_unknown_link_raises(skin_scene):
-    urdf, write_dae = skin_scene
+    robot, write_dae = skin_scene
     with pytest.raises(ValueError, match="not in the robot"):
-        load_skinned_meshes(
-            write_dae(), parse_urdf(urdf), {"BoneA": "base_link", "BoneB": "missing_link"}
-        )
+        load_skinned_meshes(write_dae(), robot, {"BoneA": "base_link", "BoneB": "missing_link"})
 
 
 def test_duplicate_mesh_names_raise(skin_scene):
@@ -433,8 +431,7 @@ def test_skn_is_readable_by_mujoco(skin_scene, tmp_path):
     """Write the skins next to a generated MJCF and let MuJoCo load them."""
     mujoco = pytest.importorskip("mujoco")
 
-    urdf, write_dae = skin_scene
-    robot = parse_urdf(urdf)
+    robot, write_dae = skin_scene
     model_path = convert_robot(robot, tmp_path / "model.xml", ConvertConfig(joint_drive=None))
     skins = load_skinned_meshes(write_dae(), robot, BONE_LINKS)
     assets = write_mjcf_skins(skins, model_path.parent / "assets", name_prefix="robot")
@@ -493,8 +490,7 @@ def test_fix_base_bones_reference_the_worldbody(skin_scene, tmp_path):
     bone must be written as "world" — the raw link name would not resolve."""
     mujoco = pytest.importorskip("mujoco")
 
-    urdf, write_dae = skin_scene
-    robot = parse_urdf(urdf)
+    robot, write_dae = skin_scene
     config = ConvertConfig(fix_base=True, joint_drive=None)
     model_path = convert_robot(robot, tmp_path / "model.xml", config)
     skins = load_skinned_meshes(write_dae(textured=False), robot, BONE_LINKS)

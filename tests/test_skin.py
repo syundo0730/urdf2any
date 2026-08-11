@@ -387,6 +387,13 @@ def test_weighted_bone_without_mapping_raises(skin_scene):
         _load(skin_scene, bone_c_weight=0.25)
 
 
+def test_negative_weight_raises(skin_scene):
+    # A negative weight would corrupt the baked positions and normalization
+    # rather than fail; reject it at decode time.
+    with pytest.raises(ValueError, match="invalid skinning weight"):
+        _load(skin_scene, bone_c_weight=-0.25)
+
+
 def test_mapping_to_unknown_link_raises(skin_scene):
     robot, write_dae = skin_scene
     with pytest.raises(ValueError, match="not in the robot"):

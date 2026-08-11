@@ -235,6 +235,10 @@ def _vertex_influences(skin) -> list[list[tuple[int, float]]]:
             weight = float(skin.weights[w][0])
             if j < 0 or weight == 0.0:
                 continue
+            if not np.isfinite(weight) or weight < 0.0:
+                # A negative or NaN weight would silently corrupt the baked
+                # positions and the normalization; valid weights are in [0, 1].
+                raise ValueError(f"vertex {vi} has an invalid skinning weight ({weight!r})")
             pairs.append((int(j), weight))
         if not pairs:
             raise ValueError(f"vertex {vi} has no skinning weights")
@@ -407,15 +411,20 @@ def _collect_meshes(
         # and therefore already validated against the robot by _verify_bind_pose.
         vertex_weights = _vertex_link_weights(controller, bone_links, influences)
         controller_bindings = bindings.get(controller.id, {})
+        first_vertex = controller.geometry.primitives[0].vertex
         for index, primitive in enumerate(controller.geometry.primitives):
             if not isinstance(primitive, TriangleSet):
                 raise ValueError(
                     f"unsupported primitive {type(primitive).__name__} in {controller.id!r} "
                     "(skins must be triangulated)"
                 )
-            if len(primitive.vertex) != len(positions):
+            if primitive.vertex is not first_vertex and not np.array_equal(
+                primitive.vertex, first_vertex
+            ):
                 # Skin weights are per-vertex of the geometry's first position
                 # source; a primitive on a different source cannot reuse them.
+                # (Valid Collada shares one <vertices> per mesh; this guards
+                # against malformed input only.)
                 raise ValueError(
                     f"primitive {index} of {controller.id!r} uses a different position "
                     "source than the skinned one (unsupported)"

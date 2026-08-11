@@ -31,12 +31,14 @@ Issues = "https://github.com/syundo0730/urdf2any/issues"
 
 [project.optional-dependencies]
 mjcf-validate = ["mujoco>=3.0"]
+skin = ["pycollada>=0.9"]
 
 [dependency-groups]
 dev = [
     "pytest>=8.0",
     "ruff>=0.8",
     "mujoco>=3.0",
+    "pycollada>=0.9",
 ]
 
 [project.scripts]

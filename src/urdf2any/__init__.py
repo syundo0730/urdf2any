@@ -9,18 +9,38 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .backends.mjcf_skin import SkinAsset, write_mjcf_skins
 from .config import ConvertConfig, JointDriveCfg
 from .ir import Robot
+from .skin import SkinnedMesh, SkinnedModel, load_skinned_meshes
 from .urdf.parser import parse_urdf
 
 __all__ = [
     "ConvertConfig",
     "JointDriveCfg",
     "Robot",
+    "SkinAsset",
+    "SkinnedMesh",
+    "SkinnedModel",
     "parse_urdf",
     "convert",
     "convert_robot",
+    "load_skinned_meshes",
+    "mjcf_body_names",
+    "write_mjcf_skins",
 ]
+
+
+def __getattr__(name: str):
+    # Loaded lazily: backends.mjcf imports mesh -> trimesh, which would make
+    # `import urdf2any` eagerly pay for a backend the caller may never use
+    # (convert_robot imports its backend inside the function for the same
+    # reason).
+    if name == "mjcf_body_names":
+        from .backends.mjcf import mjcf_body_names
+
+        return mjcf_body_names
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def convert(

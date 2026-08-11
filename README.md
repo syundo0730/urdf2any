@@ -74,7 +74,8 @@ validate against the real implementations.
 | Inertials | authored mass/inertia/COM; optional geometry-derived backfill via MuJoCo |
 | Drives | position / velocity PD gains → USD DriveAPI / MJCF actuators |
 | Materials | URDF colors → UsdPreviewSurface / MJCF materials |
-| Not yet | mimic joints, sensors, `package://` ROS package resolution beyond a search root |
+| Skins | skinned Collada (DAE) → MuJoCo `<skin>` assets, bone weights rebound to link frames (`pip install "urdf2any[skin]"`) |
+| Not yet | mimic joints, sensors, UsdSkel skins, `package://` ROS package resolution beyond a search root |
 
 Robot-specific preprocessing (renaming links, removing parts) is deliberately
 out of scope: parse with `parse_urdf`, mutate the IR, then emit with

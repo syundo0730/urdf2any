@@ -78,8 +78,16 @@ validate against the real implementations.
 
 ## Options
 
-Every conversion flag maps to a field of `ConvertConfig`, so the Python API
-accepts the same options under the same names (in snake_case).
+Conversion flags correspond to `ConvertConfig` fields, mostly under the same
+name in snake_case. The exceptions:
+
+- `--keep-fixed-link-inertials` sets `merge_fixed_ignore_inertia=False`
+- `--exclude-geometry` patterns go in the `exclude_geometry_names` list
+- `--no-actuators` sets `mjcf_add_actuators=False`
+- the `--joint-*` flags fill the nested drive config:
+  `ConvertConfig(joint_drive=JointDriveCfg(target_type=..., stiffness=..., damping=...))`
+- the General table below is CLI-only; in Python, `mesh_root` is an argument of
+  `convert` / `parse_urdf`, not a config field
 
 ### General
 
@@ -105,7 +113,7 @@ accepts the same options under the same names (in snake_case).
 | `--compute-missing-inertials` | off | When merging mixes authored and missing masses, derive the missing inertial from collision geometry via MuJoCo (needs `urdf2any[mjcf-validate]`) |
 | `--skip-collision-inertia` | off | Omit authored inertia/COM on links with collision geometry; the consumer computes them |
 | `--skip-collision-mass` | off | Omit authored mass on links with collision geometry; the consumer computes it |
-| `--frame-link-mass KG` | — | Give frame-only links (no inertial, no collision) this mass; requires `--frame-link-inertia` |
+| `--frame-link-mass KG` | — | Set this mass on frame-only links (no visual or collision geometry), overwriting any authored inertial; requires `--frame-link-inertia` |
 | `--frame-link-inertia KGM2` | — | Diagonal inertia to pair with `--frame-link-mass` |
 | `--exclude-geometry REGEX` | — | Drop visual/collision geometry whose name matches; repeatable |
 

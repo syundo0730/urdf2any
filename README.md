@@ -57,6 +57,92 @@ convert(
 By default every URDF link becomes one body and no lossy transformation is
 applied — the same config yields the same robot in both formats.
 
+### MuJoCo skins
+
+Skin conversion is available through the Python API; the CLI does not attach
+skins automatically. Install the optional loader first:
+
+```bash
+pip install "urdf2any[skin]"
+```
+
+Prepare a triangulated Collada (`.dae`) mesh with skin controllers and bone
+weights. Its bone rest positions must match the corresponding URDF links at
+zero joint positions (the default position tolerance is 1 mm). DAE unit and
+up-axis metadata are normalized on load. Map each bone with non-zero weights
+to a URDF link using its Collada joint `sid`; keep referenced texture files
+alongside the DAE or at their document-relative paths.
+
+The following example converts the robot, writes `.skn` files and textures,
+and registers them in the generated MJCF. Replace the example file names and
+bone/link mapping with your own:
+
+```python
+import xml.etree.ElementTree as ET
+
+from urdf2any import (
+    ConvertConfig,
+    convert_robot,
+    load_skinned_meshes,
+    mjcf_body_names,
+    parse_urdf,
+    write_mjcf_skins,
+)
+
+robot = parse_urdf("robot.urdf")
+config = ConvertConfig(fix_base=True, merge_fixed_joints=False)
+model_path = convert_robot(robot, "output/robot.xml", config)
+
+# Use the same IR after conversion preprocessing for skin loading and body names.
+skins = load_skinned_meshes(
+    "shell.dae", robot, {"BoneA": "base_link", "BoneB": "upper_link"}
+)
+skin_assets = write_mjcf_skins(
+    skins,
+    model_path.parent / config.mjcf_assets_dir,
+    name_prefix="robot",
+    body_names=mjcf_body_names(robot, config),
+)
+
+tree = ET.parse(model_path)
+asset_element = tree.getroot().find("asset")
+if asset_element is None:
+    asset_element = ET.SubElement(tree.getroot(), "asset")
+
+for skin in skin_assets:
+    attributes = {"name": skin.name, "file": skin.file}
+    if skin.texture_file is not None:
+        material_name = f"{skin.name}_material"
+        texture_name = f"{skin.name}_texture"
+        ET.SubElement(
+            asset_element, "texture", name=texture_name, type="2d",
+            file=f"{config.mjcf_assets_dir}/{skin.texture_file}",
+        )
+        ET.SubElement(
+            asset_element, "material", name=material_name, texture=texture_name
+        )
+        attributes["material"] = material_name
+    else:
+        attributes["rgba"] = " ".join(str(value) for value in skin.rgba)
+    ET.SubElement(asset_element, "skin", **attributes)
+
+tree.write(model_path, encoding="utf-8", xml_declaration=True)
+```
+
+`write_mjcf_skins` returns asset metadata; it does not edit the MJCF itself.
+The generated compiler sets `meshdir` to `config.mjcf_assets_dir`, so skin
+`file` values use only the `.skn` file name. Texture paths include the asset
+directory because the generated MJCF does not set `texturedir`. Choose a
+`name_prefix` that keeps skin, texture, and material names distinct from other
+assets in your model.
+
+Pass `mjcf_body_names(robot, config)` to account for a fixed base being folded
+into `world` and reserved body names being renamed. The example keeps fixed
+links so the bone mapping remains valid. If you enable fixed-joint merging
+(including via `ConvertConfig.mujoco()`), author the skin against the surviving
+link frames and map bones to links that remain after preprocessing.
+Skins provide visual deformation; keep collision geometry in the URDF.
+
 ## Compatibility presets
 
 To reproduce the behavior of an existing converter, start from a preset;

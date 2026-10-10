@@ -482,6 +482,35 @@ def test_cli_attaches_skin(skin_scene, tmp_path, textured, fix_base, root_name):
     mujoco.mj_step(model, mujoco.MjData(model))
 
 
+@pytest.mark.parametrize("textured", [True, False])
+def test_cli_skin_native_urdf_parity(skin_scene, tmp_path, textured):
+    """A CLI skin model preserves native-URDF physics under the MuJoCo preset."""
+    mujoco = pytest.importorskip("mujoco")
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+    from compare_mjcf import compare, extract
+
+    _, write_dae = skin_scene
+    urdf = tmp_path / "robot.urdf"
+    output = tmp_path / "output" / "robot.xml"
+    result = subprocess.run([
+        sys.executable, "-m", "urdf2any.cli", str(urdf), "-o", str(output),
+        "--preset", "mujoco", "--fix-base", "--skin", str(write_dae(textured=textured)),
+        "--skin-bone", "BoneA=base_link", "--skin-bone", "BoneB=upper_link",
+    ], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    candidate = mujoco.MjModel.from_xml_path(str(output))
+    reference = mujoco.MjModel.from_xml_path(str(urdf))
+    differences = compare(extract(reference), extract(candidate), compare_masses=True)
+    assert not differences, "MJCF diverged from MuJoCo-native:\n" + "\n".join(differences)
+    assert candidate.nskin == 1
+    assert candidate.nskinbone == 2
+    assert candidate.ntex == int(textured)
+    bodies = [mujoco.mj_id2name(candidate, mujoco.mjtObj.mjOBJ_BODY, i) for i in candidate.skin_bonebodyid]
+    assert bodies == ["world", "upper_link"]
+    assert np.allclose(candidate.skin_bonebindpos, [[0, 0, 0], [0, 0, 1]])
+    mujoco.mj_step(candidate, mujoco.MjData(candidate))
+
+
 @pytest.mark.parametrize(
     ("dae_options", "mapping", "message"),
     [

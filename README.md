@@ -135,6 +135,10 @@ The generated compiler sets `meshdir` to `config.mjcf_assets_dir`, so skin
 directory because the generated MJCF does not set `texturedir`. Choose a
 `name_prefix` that keeps skin, texture, and material names distinct from other
 assets in your model.
+Distinct source textures must have unique file names, even if they are in
+different directories; otherwise `write_mjcf_skins` raises a texture name
+collision error. Rename colliding files and update their references in the
+DAE before loading the skin.
 
 Pass `mjcf_body_names(robot, config)` to account for a fixed base being folded
 into `world` and reserved body names being renamed. The example keeps fixed

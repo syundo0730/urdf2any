@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import argparse
 import logging
+import shutil
 import sys
+import tempfile
 import xml.etree.ElementTree as ET
+from dataclasses import replace
 from pathlib import Path
 
 from .config import ConvertConfig, JointDriveCfg
@@ -159,6 +162,36 @@ def _attach_skin(robot, output: Path, config: ConvertConfig, path: Path, bone_li
     tree.write(output, encoding="utf-8", xml_declaration=True)
 
 
+def _convert_with_skin(
+    robot, output: Path, config: ConvertConfig, path: Path, bone_links: dict[str, str]
+) -> Path:
+    """Stage the complete model before atomically replacing the output XML.
+
+    Each conversion reserves a fresh asset directory with exclusive creation,
+    including textures and ordinary meshes. Previously published assets remain
+    untouched, even when another output or a rerun uses the same mesh names.
+    Failed conversions remove their reserved directory and staged files.
+    """
+    from . import convert_robot
+
+    output = output.resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".urdf2any-", dir=output.parent) as staging:
+        assets = Path(tempfile.mkdtemp(prefix=f"{output.name}.assets-", dir=output.parent))
+        staged_config = replace(config, mjcf_assets_dir=assets.name)
+        published = False
+        try:
+            staged_output = convert_robot(robot, Path(staging) / output.name, config=staged_config)
+            _attach_skin(robot, staged_output, staged_config, path, bone_links)
+            (staged_output.parent / assets.name).replace(assets)
+            staged_output.replace(output)
+            published = True
+        finally:
+            if not published:
+                shutil.rmtree(assets)
+    return output
+
+
 def _build_config(args) -> ConvertConfig:
     """Build a ConvertConfig from CLI args, layering: preset -> explicit flags.
 
@@ -231,15 +264,14 @@ def main(argv: list[str] | None = None) -> int:
 
     config = _build_config(args)
 
-    from . import convert, convert_robot
+    from . import convert
 
     if args.skin is None:
         output = convert(args.input, args.output, config=config, mesh_root=args.mesh_root)
     else:
         try:
             robot = parse_urdf(args.input, mesh_root=args.mesh_root)
-            output = convert_robot(robot, args.output, config=config)
-            _attach_skin(robot, output, config, args.skin, bone_links)
+            output = _convert_with_skin(robot, args.output, config, args.skin, bone_links)
         except (ImportError, OSError, ValueError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2

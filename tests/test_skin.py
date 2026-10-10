@@ -251,14 +251,14 @@ def _dae_xml(
 """
 
 
-def _write_png(path: Path) -> None:
-    """A 2x2 red PNG, so MuJoCo has a real image to load."""
+def _write_png(path: Path, rgb: tuple[int, int, int] = (255, 0, 0)) -> None:
+    """A 2x2 solid PNG, so MuJoCo has a real image to load."""
 
     def chunk(kind: bytes, data: bytes) -> bytes:
         body = kind + data
         return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
 
-    raw = b"".join(b"\x00" + b"\xff\x00\x00" * 2 for _ in range(2))
+    raw = b"".join(b"\x00" + bytes(rgb) * 2 for _ in range(2))
     path.write_bytes(
         b"\x89PNG\r\n\x1a\n"
         + chunk(b"IHDR", struct.pack(">IIBBBBB", 2, 2, 8, 2, 0, 0, 0))
@@ -464,7 +464,21 @@ def test_cli_attaches_skin(skin_scene, tmp_path, textured, fix_base, root_name):
     assert np.allclose(bind_positions[root_body], [0, 0, 0])
     assert np.allclose(bind_positions["upper_link"], [0, 0, 1])
     assert model.ntex == int(textured)
-    assert (output.parent / "assets" / "skin_Shell.skn").exists()
+    asset_dir = ET.parse(output).getroot().find("compiler").get("meshdir")
+    assert (output.parent / asset_dir / "skin_Shell.skn").exists()
+    # Adding visual skin assets must leave the robot's compiled physics intact.
+    bare_output = tmp_path / "bare" / "robot.xml"
+    config = ConvertConfig(fix_base=fix_base)
+    convert_robot(parse_urdf(urdf), bare_output, config)
+    bare_model = mujoco.MjModel.from_xml_path(str(bare_output))
+    for field in (
+        "nq", "nv", "nbody", "njnt", "ngeom", "nu", "body_mass", "body_inertia",
+        "body_pos", "body_quat", "body_ipos", "body_iquat", "body_parentid",
+        "jnt_type", "jnt_bodyid", "jnt_pos", "jnt_axis", "jnt_range", "dof_damping",
+        "geom_type", "geom_bodyid", "geom_pos", "geom_quat", "geom_size", "geom_friction",
+        "actuator_trnid", "actuator_gainprm", "actuator_biasprm",
+    ):
+        assert np.array_equal(getattr(model, field), getattr(bare_model, field)), field
     mujoco.mj_step(model, mujoco.MjData(model))
 
 
@@ -489,6 +503,8 @@ def test_cli_invalid_skin_reports_error(skin_scene, tmp_path, dae_options, mappi
     assert message in result.stderr
     assert "Traceback" not in result.stderr
     assert "Wrote" not in result.stdout
+    assert not (tmp_path / "output" / "robot.xml").exists()
+    assert not list((tmp_path / "output").iterdir())
 
 
 @pytest.mark.parametrize("surviving_mapping", [True, False])
@@ -541,6 +557,94 @@ def test_skin_registration_reuses_textures_and_avoids_asset_names(skin_scene, tm
     assert model.ntex == 1
     names = [element.get("name") for element in ET.parse(output).getroot().find("asset")]
     assert len(names) == len(set(names))
+
+
+def test_cli_outputs_do_not_overwrite_skin_assets(tmp_path):
+    mujoco = pytest.importorskip("mujoco")
+    from urdf2any.cli import main
+
+    output_dir = tmp_path / "output"
+    snapshots = {}
+    for index, filename in enumerate(("robot.xml", "robot.mjcf", "robot.xml")):
+        source = tmp_path / f"source{index}"
+        source.mkdir()
+        urdf = source / "robot.urdf"
+        urdf.write_text(URDF)
+        dae = source / "shell.dae"
+        xml = _dae_xml().replace(
+            "1 0 0 0 0 1 0 0.5 0 0 1 0 0 0 0 1",
+            f"1 0 0 0 0 1 0 {0.5 + index} 0 0 1 0 0 0 0 1",
+        )
+        dae.write_text(xml)
+        _write_png(source / "skin_tex.png", rgb=(255 - 100 * index, 0, 100 * index))
+        output = output_dir / filename
+        assert main([
+            str(urdf), "-o", str(output), "--skin", str(dae),
+            "--skin-bone", "BoneA=base_link", "--skin-bone", "BoneB=upper_link",
+        ]) == 0
+        meshdir = ET.parse(output).getroot().find("compiler").get("meshdir")
+        asset_dir = output_dir / meshdir
+        assert asset_dir not in snapshots
+        for directory, files in snapshots.items():
+            assert {p.name: p.read_bytes() for p in directory.iterdir()} == files
+        files = {p.name: p.read_bytes() for p in asset_dir.iterdir()}
+        assert files["skin_tex.png"] == (source / "skin_tex.png").read_bytes()
+        if snapshots:
+            assert all(files["skin_Shell.skn"] != prior["skin_Shell.skn"] for prior in snapshots.values())
+        snapshots[asset_dir] = files
+        model = mujoco.MjModel.from_xml_path(str(output))
+        assert model.nskin == 1
+        assert np.allclose(model.skin_vert[0], [0, 0.5 + index, 0])
+        mujoco.mj_step(model, mujoco.MjData(model))
+    # Both currently published outputs still resolve their own skins and textures.
+    for filename, expected_y in (("robot.xml", 2.5), ("robot.mjcf", 1.5)):
+        model = mujoco.MjModel.from_xml_path(str(output_dir / filename))
+        assert np.allclose(model.skin_vert[0], [0, expected_y, 0])
+    assert not list(output_dir.glob(".urdf2any-*"))
+
+
+@pytest.mark.parametrize("failure", ["validation", "attachment", "publication"])
+def test_cli_skin_failure_preserves_existing_output(skin_scene, tmp_path, monkeypatch, capsys, failure):
+    from urdf2any import cli
+
+    _, write_dae = skin_scene
+    output = tmp_path / "output" / "robot.xml"
+    command = [
+        str(tmp_path / "robot.urdf"), "-o", str(output), "--skin", str(write_dae()),
+        "--skin-bone", "BoneA=base_link", "--skin-bone", "BoneB=upper_link",
+    ]
+    assert cli.main(command) == 0
+    snapshot = {p.relative_to(output.parent): p.read_bytes() for p in output.parent.rglob("*") if p.is_file()}
+    directories = {p.relative_to(output.parent) for p in output.parent.rglob("*") if p.is_dir()}
+    capsys.readouterr()
+    if failure == "validation":
+        command[-1] = "BoneB=missing"
+    elif failure == "attachment":
+        attach = cli._attach_skin
+
+        def fail_attachment(*args):
+            attach(*args)
+            raise OSError("attachment failed")
+
+        monkeypatch.setattr(cli, "_attach_skin", fail_attachment)
+    else:
+        replace_path = Path.replace
+
+        def fail_publication(path, target):
+            if target == output:
+                raise OSError("publication failed")
+            return replace_path(path, target)
+
+        monkeypatch.setattr(Path, "replace", fail_publication)
+    assert cli.main(command) == 2
+    captured = capsys.readouterr()
+    assert "error:" in captured.err
+    assert "Wrote" not in captured.out
+    remaining = {
+        p.relative_to(output.parent): p.read_bytes() for p in output.parent.rglob("*") if p.is_file()
+    }
+    assert remaining == snapshot
+    assert {p.relative_to(output.parent) for p in output.parent.rglob("*") if p.is_dir()} == directories
 
 
 def test_skn_is_readable_by_mujoco(skin_scene, tmp_path):

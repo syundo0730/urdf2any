@@ -29,7 +29,7 @@ features that need an extra dependency:
 |---|---|---|
 | `pip install urdf2any` | — | All conversion features: USD/MJCF output, mesh geometry, fixed-joint merging, drives, materials |
 | `pip install "urdf2any[mjcf-validate]"` | `mujoco` | Geometry-derived inertials (`--compute-missing-inertials`, needed by `--preset mujoco`) |
-| `pip install "urdf2any[skin]"` | `pycollada` | Skinned Collada (DAE) → MuJoCo `<skin>` conversion (`urdf2any.load_skinned_meshes`) |
+| `pip install "urdf2any[skin]"` | `pycollada` | Skinned Collada (DAE) → MuJoCo `<skin>` conversion (`--skin`) |
 
 Extras combine: `pip install "urdf2any[mjcf-validate,skin]"`.
 
@@ -56,6 +56,21 @@ convert(
 
 By default every URDF link becomes one body and no lossy transformation is
 applied — the same config yields the same robot in both formats.
+
+### MuJoCo skins
+
+Install `urdf2any[skin]`, then attach a triangulated skinned DAE to MJCF:
+
+```bash
+urdf2any robot.urdf -o robot.xml --skin shell.dae \
+  --skin-bone BoneA=base --skin-bone BoneB=upper_link
+```
+
+Map every weighted bone's Collada joint `sid` to a URDF link. Bone rest
+positions must match the robot's zero pose; with fixed-joint merging, map to
+surviving link frames. Skin files, textures, and MJCF asset entries are generated
+automatically. Distinct textures need unique file names; after renaming, update
+the DAE references. Skins are visual only; keep collision geometry in the URDF.
 
 ## Compatibility presets
 
@@ -86,7 +101,8 @@ name in snake_case. The exceptions:
 - `--no-actuators` sets `mjcf_add_actuators=False`
 - the `--joint-*` flags fill the nested drive config:
   `ConvertConfig(joint_drive=JointDriveCfg(target_type=..., stiffness=..., damping=...))`
-- the General table below is CLI-only; in Python, `mesh_root` is an argument of
+- `--skin`, `--skin-bone`, and the General table below are CLI-only;
+  in Python, `mesh_root` is an argument of
   `convert` / `parse_urdf`, not a config field
 
 ### General
@@ -129,6 +145,8 @@ name in snake_case. The exceptions:
 
 | Option | Default | Description |
 |---|---|---|
+| `--skin DAE` | — | Generate and attach skins from a triangulated skinned DAE (needs `urdf2any[skin]`) |
+| `--skin-bone BONE=LINK` | — | Map a weighted Collada joint `sid` to a URDF link (repeatable; requires `--skin`) |
 | `--no-actuators` | off (actuators on) | Omit the `<actuator>` section from the MJCF output |
 
 ## Feature support

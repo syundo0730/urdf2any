@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import dataclasses
 import struct
+import subprocess
+import sys
 import xml.etree.ElementTree as ET
 import zlib
 from pathlib import Path
@@ -249,14 +251,14 @@ def _dae_xml(
 """
 
 
-def _write_png(path: Path) -> None:
-    """A 2x2 red PNG, so MuJoCo has a real image to load."""
+def _write_png(path: Path, rgb: tuple[int, int, int] = (255, 0, 0)) -> None:
+    """A 2x2 solid PNG, so MuJoCo has a real image to load."""
 
     def chunk(kind: bytes, data: bytes) -> bytes:
         body = kind + data
         return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
 
-    raw = b"".join(b"\x00" + b"\xff\x00\x00" * 2 for _ in range(2))
+    raw = b"".join(b"\x00" + bytes(rgb) * 2 for _ in range(2))
     path.write_bytes(
         b"\x89PNG\r\n\x1a\n"
         + chunk(b"IHDR", struct.pack(">IIBBBBB", 2, 2, 8, 2, 0, 0, 0))
@@ -432,6 +434,246 @@ def test_colliding_texture_basenames_raise(skin_scene, tmp_path):
 
 
 # ----- MuJoCo parity --------------------------------------------------------
+
+
+@pytest.mark.parametrize("textured", [True, False])
+@pytest.mark.parametrize("fix_base", [True, False])
+@pytest.mark.parametrize("root_name", ["base", "world"])
+def test_cli_attaches_skin(skin_scene, tmp_path, textured, fix_base, root_name):
+    mujoco = pytest.importorskip("mujoco")
+    _, write_dae = skin_scene
+    urdf = tmp_path / "robot.urdf"
+    urdf.write_text(URDF.replace("base_link", root_name))
+    output = tmp_path / "output" / "robot.mjcf"
+    command = [
+        sys.executable, "-m", "urdf2any.cli", str(urdf), "-o", str(output),
+        "--skin", str(write_dae(textured=textured)),
+        "--skin-bone", f"BoneA={root_name}", "--skin-bone", "BoneB=upper_link",
+    ]
+    if fix_base:
+        command.append("--fix-base")
+    result = subprocess.run(command, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    model = mujoco.MjModel.from_xml_path(str(output))
+    assert model.nskin == 1
+    assert model.nskinbone == 2
+    bodies = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, i) for i in model.skin_bonebodyid]
+    root_body = "world" if fix_base else mjcf_body_names(parse_urdf(urdf), ConvertConfig())[root_name]
+    assert set(bodies) == {root_body, "upper_link"}
+    bind_positions = dict(zip(bodies, model.skin_bonebindpos, strict=True))
+    assert np.allclose(bind_positions[root_body], [0, 0, 0])
+    assert np.allclose(bind_positions["upper_link"], [0, 0, 1])
+    assert model.ntex == int(textured)
+    asset_dir = ET.parse(output).getroot().find("compiler").get("meshdir")
+    assert (output.parent / asset_dir / "skin_Shell.skn").exists()
+    # Adding visual skin assets must leave the robot's compiled physics intact.
+    bare_output = tmp_path / "bare" / "robot.xml"
+    config = ConvertConfig(fix_base=fix_base)
+    convert_robot(parse_urdf(urdf), bare_output, config)
+    bare_model = mujoco.MjModel.from_xml_path(str(bare_output))
+    for field in (
+        "nq", "nv", "nbody", "njnt", "ngeom", "nu", "body_mass", "body_inertia",
+        "body_pos", "body_quat", "body_ipos", "body_iquat", "body_parentid",
+        "jnt_type", "jnt_bodyid", "jnt_pos", "jnt_axis", "jnt_range", "dof_damping",
+        "geom_type", "geom_bodyid", "geom_pos", "geom_quat", "geom_size", "geom_friction",
+        "actuator_trnid", "actuator_gainprm", "actuator_biasprm",
+    ):
+        assert np.array_equal(getattr(model, field), getattr(bare_model, field)), field
+    mujoco.mj_step(model, mujoco.MjData(model))
+
+
+@pytest.mark.parametrize("textured", [True, False])
+def test_cli_skin_native_urdf_parity(skin_scene, tmp_path, textured):
+    """A CLI skin model preserves native-URDF physics under the MuJoCo preset."""
+    mujoco = pytest.importorskip("mujoco")
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+    from compare_mjcf import compare, extract
+
+    _, write_dae = skin_scene
+    urdf = tmp_path / "robot.urdf"
+    output = tmp_path / "output" / "robot.xml"
+    result = subprocess.run([
+        sys.executable, "-m", "urdf2any.cli", str(urdf), "-o", str(output),
+        "--preset", "mujoco", "--fix-base", "--skin", str(write_dae(textured=textured)),
+        "--skin-bone", "BoneA=base_link", "--skin-bone", "BoneB=upper_link",
+    ], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    candidate = mujoco.MjModel.from_xml_path(str(output))
+    reference = mujoco.MjModel.from_xml_path(str(urdf))
+    differences = compare(extract(reference), extract(candidate), compare_masses=True)
+    assert not differences, "MJCF diverged from MuJoCo-native:\n" + "\n".join(differences)
+    assert candidate.nskin == 1
+    assert candidate.nskinbone == 2
+    assert candidate.ntex == int(textured)
+    bodies = [mujoco.mj_id2name(candidate, mujoco.mjtObj.mjOBJ_BODY, i) for i in candidate.skin_bonebodyid]
+    assert bodies == ["world", "upper_link"]
+    assert np.allclose(candidate.skin_bonebindpos, [[0, 0, 0], [0, 0, 1]])
+    mujoco.mj_step(candidate, mujoco.MjData(candidate))
+
+
+@pytest.mark.parametrize(
+    ("dae_options", "mapping", "message"),
+    [
+        ({}, ["BoneA=base_link"], "bone -> link"),
+        ({"bone_b_z": 2.0}, ["BoneA=base_link", "BoneB=upper_link"], "bind pose"),
+        ({}, ["BoneA=missing", "BoneB=upper_link"], "not in the robot"),
+    ],
+)
+def test_cli_invalid_skin_reports_error(skin_scene, tmp_path, dae_options, mapping, message):
+    _, write_dae = skin_scene
+    command = [
+        sys.executable, "-m", "urdf2any.cli", str(tmp_path / "robot.urdf"),
+        "-o", str(tmp_path / "output" / "robot.xml"), "--skin", str(write_dae(**dae_options)),
+    ]
+    for item in mapping:
+        command.extend(["--skin-bone", item])
+    result = subprocess.run(command, capture_output=True, text=True)
+    assert result.returncode == 2
+    assert message in result.stderr
+    assert "Traceback" not in result.stderr
+    assert "Wrote" not in result.stdout
+    assert not (tmp_path / "output" / "robot.xml").exists()
+    assert not list((tmp_path / "output").iterdir())
+
+
+@pytest.mark.parametrize("surviving_mapping", [True, False])
+def test_cli_skin_after_fixed_joint_merging(skin_scene, tmp_path, surviving_mapping):
+    mujoco = pytest.importorskip("mujoco")
+    _, write_dae = skin_scene
+    urdf = tmp_path / "robot.urdf"
+    urdf.write_text(URDF.replace('type="revolute"', 'type="fixed"'))
+    dae = write_dae(bone_b_z=0.0 if surviving_mapping else 1.0)
+    output = tmp_path / "output" / "robot.xml"
+    result = subprocess.run([
+        sys.executable, "-m", "urdf2any.cli", str(urdf), "-o", str(output),
+        "--merge-fixed-joints", "--skin", str(dae), "--skin-bone", "BoneA=base_link",
+        "--skin-bone", f"BoneB={'base_link' if surviving_mapping else 'upper_link'}",
+    ], capture_output=True, text=True)
+    if surviving_mapping:
+        assert result.returncode == 0, result.stderr
+        model = mujoco.MjModel.from_xml_path(str(output))
+        assert model.nskin == 1
+        assert model.nskinbone == 1
+        body = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, model.skin_bonebodyid[0])
+        assert body == "base_link"
+    else:
+        assert result.returncode == 2
+        assert "merged away" in result.stderr
+        assert "Wrote" not in result.stdout
+
+
+def test_skin_registration_reuses_textures_and_avoids_asset_names(skin_scene, tmp_path):
+    mujoco = pytest.importorskip("mujoco")
+    from urdf2any.cli import _attach_skin
+
+    robot, write_dae = skin_scene
+    dae = write_dae(duplicate_controller=True)
+    # Give the second controller a distinct mesh name while sharing its texture.
+    dae.write_text(
+        dae.read_text().replace('"Shell-skin', '"Other-skin').replace('"#Shell-skin', '"#Other-skin')
+    )
+    config = ConvertConfig(joint_drive=None)
+    output = convert_robot(robot, tmp_path / "output" / "robot.xml", config)
+    tree = ET.parse(output)
+    assets = tree.getroot().find("asset")
+    ET.SubElement(assets, "material", name="skin_Shell")
+    ET.SubElement(assets, "material", name="skin_Shell_texture")
+    ET.SubElement(assets, "material", name="skin_Shell_material")
+    tree.write(output)
+    _attach_skin(robot, output, config, dae, BONE_LINKS)
+    model = mujoco.MjModel.from_xml_path(str(output))
+    assert model.nskin == 2
+    assert model.ntex == 1
+    names = [element.get("name") for element in ET.parse(output).getroot().find("asset")]
+    assert len(names) == len(set(names))
+
+
+def test_cli_outputs_do_not_overwrite_skin_assets(tmp_path):
+    mujoco = pytest.importorskip("mujoco")
+    from urdf2any.cli import main
+
+    output_dir = tmp_path / "output"
+    snapshots = {}
+    for index, filename in enumerate(("robot.xml", "robot.mjcf", "robot.xml")):
+        source = tmp_path / f"source{index}"
+        source.mkdir()
+        urdf = source / "robot.urdf"
+        urdf.write_text(URDF)
+        dae = source / "shell.dae"
+        xml = _dae_xml().replace(
+            "1 0 0 0 0 1 0 0.5 0 0 1 0 0 0 0 1",
+            f"1 0 0 0 0 1 0 {0.5 + index} 0 0 1 0 0 0 0 1",
+        )
+        dae.write_text(xml)
+        _write_png(source / "skin_tex.png", rgb=(255 - 100 * index, 0, 100 * index))
+        output = output_dir / filename
+        assert main([
+            str(urdf), "-o", str(output), "--skin", str(dae),
+            "--skin-bone", "BoneA=base_link", "--skin-bone", "BoneB=upper_link",
+        ]) == 0
+        meshdir = ET.parse(output).getroot().find("compiler").get("meshdir")
+        asset_dir = output_dir / meshdir
+        assert asset_dir not in snapshots
+        for directory, files in snapshots.items():
+            assert {p.name: p.read_bytes() for p in directory.iterdir()} == files
+        files = {p.name: p.read_bytes() for p in asset_dir.iterdir()}
+        assert files["skin_tex.png"] == (source / "skin_tex.png").read_bytes()
+        if snapshots:
+            assert all(files["skin_Shell.skn"] != prior["skin_Shell.skn"] for prior in snapshots.values())
+        snapshots[asset_dir] = files
+        model = mujoco.MjModel.from_xml_path(str(output))
+        assert model.nskin == 1
+        assert np.allclose(model.skin_vert[0], [0, 0.5 + index, 0])
+        mujoco.mj_step(model, mujoco.MjData(model))
+    # Both currently published outputs still resolve their own skins and textures.
+    for filename, expected_y in (("robot.xml", 2.5), ("robot.mjcf", 1.5)):
+        model = mujoco.MjModel.from_xml_path(str(output_dir / filename))
+        assert np.allclose(model.skin_vert[0], [0, expected_y, 0])
+    assert not list(output_dir.glob(".urdf2any-*"))
+
+
+@pytest.mark.parametrize("failure", ["validation", "attachment", "publication"])
+def test_cli_skin_failure_preserves_existing_output(skin_scene, tmp_path, monkeypatch, capsys, failure):
+    from urdf2any import cli
+
+    _, write_dae = skin_scene
+    output = tmp_path / "output" / "robot.xml"
+    command = [
+        str(tmp_path / "robot.urdf"), "-o", str(output), "--skin", str(write_dae()),
+        "--skin-bone", "BoneA=base_link", "--skin-bone", "BoneB=upper_link",
+    ]
+    assert cli.main(command) == 0
+    snapshot = {p.relative_to(output.parent): p.read_bytes() for p in output.parent.rglob("*") if p.is_file()}
+    directories = {p.relative_to(output.parent) for p in output.parent.rglob("*") if p.is_dir()}
+    capsys.readouterr()
+    if failure == "validation":
+        command[-1] = "BoneB=missing"
+    elif failure == "attachment":
+        attach = cli._attach_skin
+
+        def fail_attachment(*args):
+            attach(*args)
+            raise OSError("attachment failed")
+
+        monkeypatch.setattr(cli, "_attach_skin", fail_attachment)
+    else:
+        replace_path = Path.replace
+
+        def fail_publication(path, target):
+            if target == output:
+                raise OSError("publication failed")
+            return replace_path(path, target)
+
+        monkeypatch.setattr(Path, "replace", fail_publication)
+    assert cli.main(command) == 2
+    captured = capsys.readouterr()
+    assert "error:" in captured.err
+    assert "Wrote" not in captured.out
+    remaining = {
+        p.relative_to(output.parent): p.read_bytes() for p in output.parent.rglob("*") if p.is_file()
+    }
+    assert remaining == snapshot
+    assert {p.relative_to(output.parent) for p in output.parent.rglob("*") if p.is_dir()} == directories
 
 
 def test_skn_is_readable_by_mujoco(skin_scene, tmp_path):

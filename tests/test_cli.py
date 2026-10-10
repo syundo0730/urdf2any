@@ -76,6 +76,36 @@ def test_cli_unknown_suffix(two_link_urdf, tmp_path):
     assert result.returncode != 0
 
 
+@pytest.mark.parametrize(
+    ("options", "message"),
+    [
+        (["--skin-bone", "BoneA=base"], "requires --skin"),
+        (["--skin", "shell.dae"], "requires --skin-bone"),
+        (["--skin", "shell.dae", "--skin-bone", "BoneA"], "expected BONE=LINK"),
+        (["--skin", "shell.dae", "--skin-bone", "=base"], "expected BONE=LINK"),
+        (["--skin", "shell.dae", "--skin-bone", "BoneA="], "expected BONE=LINK"),
+        (["--skin", "shell.dae", "--skin-bone", "BoneA=base", "--skin-bone", "BoneA=arm"], "duplicate"),
+        (["--skin", "shell.dae", "--skin-bone", "BoneA=base", "--dump-ir"], "requires MJCF output"),
+    ],
+)
+def test_cli_rejects_invalid_skin_options(two_link_urdf, tmp_path, options, message):
+    output = tmp_path / "robot.xml"
+    result = _run([str(two_link_urdf), "-o", str(output), *options])
+    assert result.returncode == 2
+    assert message in result.stderr
+    assert not output.exists()
+
+
+def test_cli_rejects_skin_for_usd(two_link_urdf, tmp_path):
+    output = tmp_path / "robot.usd"
+    result = _run([
+        str(two_link_urdf), "-o", str(output), "--skin", "shell.dae", "--skin-bone", "BoneA=base",
+    ])
+    assert result.returncode == 2
+    assert "requires MJCF output" in result.stderr
+    assert not output.exists()
+
+
 def test_cli_preset_mujoco_merges(two_link_urdf, tmp_path):
     out = tmp_path / "robot.xml"
     result = _run([str(two_link_urdf), "-o", str(out), "--preset", "mujoco", "--fix-base"])

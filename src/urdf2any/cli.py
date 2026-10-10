@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import argparse
 import logging
+import shutil
 import sys
+import tempfile
+import xml.etree.ElementTree as ET
+from dataclasses import replace
 from pathlib import Path
 
 from .config import ConvertConfig, JointDriveCfg
@@ -90,8 +94,102 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Drop visual/collision geometry whose name matches (repeatable)",
     )
     parser.add_argument("--no-actuators", action="store_true", help="MJCF: omit <actuator>")
+    parser.add_argument(
+        "--skin", type=Path, help="MJCF: attach a triangulated skinned DAE (requires urdf2any[skin])"
+    )
+    parser.add_argument(
+        "--skin-bone", action="append", default=[], type=_bone_link, metavar="BONE=LINK",
+        help="MJCF: map a Collada joint sid to a URDF link (repeat for each weighted bone)",
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
     return parser
+
+
+def _bone_link(value: str) -> tuple[str, str]:
+    bone, separator, link = value.partition("=")
+    if not separator or not bone.strip() or not link.strip() or "=" in link:
+        raise argparse.ArgumentTypeError("expected BONE=LINK with non-empty names")
+    return bone.strip(), link.strip()
+
+
+def _attach_skin(robot, output: Path, config: ConvertConfig, path: Path, bone_links: dict[str, str]) -> None:
+    """Attach skins using the preprocessed IR and the backend's emitted body names.
+
+    Skin files resolve through meshdir; texture paths are model-relative because
+    the backend leaves texturedir unset. XML asset names avoid existing names,
+    and meshes sharing a texture reuse one texture asset.
+    """
+    from . import load_skinned_meshes, mjcf_body_names, write_mjcf_skins
+
+    skins = load_skinned_meshes(path, robot, bone_links)
+    skin_assets = write_mjcf_skins(
+        skins, output.parent / config.mjcf_assets_dir,
+        name_prefix="skin", body_names=mjcf_body_names(robot, config),
+    )
+    tree = ET.parse(output)
+    asset_element = tree.getroot().find("asset")
+    if asset_element is None:
+        asset_element = ET.SubElement(tree.getroot(), "asset")
+    names = {element.get("name") for element in asset_element}
+
+    def unique_name(base: str) -> str:
+        name = base
+        suffix = 1
+        while name in names:
+            name = f"{base}_{suffix}"
+            suffix += 1
+        names.add(name)
+        return name
+
+    textures: dict[str, str] = {}
+    for skin in skin_assets:
+        attributes = {"name": unique_name(skin.name), "file": skin.file}
+        if skin.texture_file is not None:
+            texture_name = textures.get(skin.texture_file)
+            if texture_name is None:
+                texture_name = unique_name(f"{skin.name}_texture")
+                ET.SubElement(
+                    asset_element, "texture", name=texture_name, type="2d",
+                    file=(Path(config.mjcf_assets_dir) / skin.texture_file).as_posix(),
+                )
+                textures[skin.texture_file] = texture_name
+            material_name = unique_name(f"{skin.name}_material")
+            ET.SubElement(asset_element, "material", name=material_name, texture=texture_name)
+            attributes["material"] = material_name
+        else:
+            attributes["rgba"] = " ".join(str(value) for value in skin.rgba)
+        ET.SubElement(asset_element, "skin", **attributes)
+    tree.write(output, encoding="utf-8", xml_declaration=True)
+
+
+def _convert_with_skin(
+    robot, output: Path, config: ConvertConfig, path: Path, bone_links: dict[str, str]
+) -> Path:
+    """Stage the complete model before atomically replacing the output XML.
+
+    Each conversion reserves a fresh asset directory with exclusive creation,
+    including textures and ordinary meshes. Previously published assets remain
+    untouched, even when another output or a rerun uses the same mesh names.
+    Failed conversions remove their reserved directory and staged files.
+    """
+    from . import convert_robot
+
+    output = output.resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".urdf2any-", dir=output.parent) as staging:
+        assets = Path(tempfile.mkdtemp(prefix=f"{output.name}.assets-", dir=output.parent))
+        staged_config = replace(config, mjcf_assets_dir=assets.name)
+        published = False
+        try:
+            staged_output = convert_robot(robot, Path(staging) / output.name, config=staged_config)
+            _attach_skin(robot, staged_output, staged_config, path, bone_links)
+            (staged_output.parent / assets.name).replace(assets)
+            staged_output.replace(output)
+            published = True
+        finally:
+            if not published:
+                shutil.rmtree(assets)
+    return output
 
 
 def _build_config(args) -> ConvertConfig:
@@ -134,7 +232,20 @@ def _build_config(args) -> ConvertConfig:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _build_parser().parse_args(argv)
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    if args.skin_bone and args.skin is None:
+        parser.error("--skin-bone requires --skin")
+    if args.skin is not None:
+        if args.dump_ir or args.output is None or args.output.suffix.lower() not in (".xml", ".mjcf"):
+            parser.error("--skin requires MJCF output (-o model.xml or model.mjcf) and cannot use --dump-ir")
+        if not args.skin_bone:
+            parser.error("--skin requires --skin-bone BONE=LINK for each weighted bone")
+    bone_links = {}
+    for bone, link in args.skin_bone:
+        if bone in bone_links:
+            parser.error(f"duplicate --skin-bone mapping for {bone!r}")
+        bone_links[bone] = link
     logging.basicConfig(
         level=logging.INFO if args.verbose else logging.WARNING,
         format="%(levelname)s %(name)s: %(message)s",
@@ -155,7 +266,15 @@ def main(argv: list[str] | None = None) -> int:
 
     from . import convert
 
-    output = convert(args.input, args.output, config=config, mesh_root=args.mesh_root)
+    if args.skin is None:
+        output = convert(args.input, args.output, config=config, mesh_root=args.mesh_root)
+    else:
+        try:
+            robot = parse_urdf(args.input, mesh_root=args.mesh_root)
+            output = _convert_with_skin(robot, args.output, config, args.skin, bone_links)
+        except (ImportError, OSError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
     print(f"Wrote {output}")
     return 0
 

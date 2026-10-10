@@ -1,6 +1,6 @@
 [project]
 name = "urdf2any"
-version = "0.2.0"
+version = "0.3.0"
 description = "Convert URDF robot descriptions to USD and MJCF without Isaac Sim or Omniverse"
 readme = "README.md"
 license = "Apache-2.0"
